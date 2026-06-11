@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 
 // ─── iCal utilities ─────────────────────────────────────────────────────────────
@@ -110,10 +110,28 @@ async function upsertIcalReservas(supabase, eventos, propiedadId, canal) {
 }
 
 // ─── Constantes ────────────────────────────────────────────────────────────────
-const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
-               'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
-const DIAS  = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb']
+const MESES      = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                    'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+const MESES_CORTO = ['Ene','Feb','Mar','Abr','May','Jun',
+                     'Jul','Ago','Sep','Oct','Nov','Dic']
+const DIAS        = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb']
+const DIAS_CORTO  = ['D','L','M','X','J','V','S']
 const COLORES = ['#3B7DD8','#E07B39','#2E9E6B','#9B4FD8','#D83B6A','#0EA5B0','#C97B22','#5B6AD8']
+
+// ─── Hook responsive ─────────────────────────────────────────────────────────
+function useIsMobile(breakpoint = 600) {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth < breakpoint : false
+  )
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${breakpoint - 1}px)`)
+    const handler = (e) => setIsMobile(e.matches)
+    mq.addEventListener('change', handler)
+    setIsMobile(mq.matches)
+    return () => mq.removeEventListener('change', handler)
+  }, [breakpoint])
+  return isMobile
+}
 
 const ESTADO_LABEL = {
   señada:     { label: 'Señada',     bg: '#FEF3C7', color: '#92400E' },
@@ -152,6 +170,7 @@ function primerDiaSemana(year, month0) {
 
 // ─── Componente ────────────────────────────────────────────────────────────────
 export default function Calendario() {
+  const isMobile = useIsMobile()
   const hoy = new Date()
   const autoSyncDoneRef = useRef(false)
   const [year,  setYear]  = useState(hoy.getFullYear())
@@ -457,38 +476,40 @@ export default function Calendario() {
 
   // ── Render ─────────────────────────────────────────────────────────────────────
   return (
-    <div style={s.page}>
+    <div style={{ ...s.page, padding: isMobile ? '12px 8px' : '24px 16px' }}>
 
       {/* Barra superior */}
-      <div style={s.topBar}>
+      <div style={{ ...s.topBar, flexWrap: 'wrap' }}>
         <div style={s.navGroup}>
           <button style={s.navBtn} onClick={() => navMes(-1)} aria-label="Mes anterior">‹</button>
-          <span style={s.monthTitle}>{MESES[month]} {year}</span>
+          <span style={{ ...s.monthTitle, fontSize: isMobile ? 16 : 20, minWidth: isMobile ? 'auto' : 210 }}>
+            {isMobile ? MESES_CORTO[month] : MESES[month]} {year}
+          </span>
           <button style={s.navBtn} onClick={() => navMes(1)}  aria-label="Mes siguiente">›</button>
           <button style={{...s.navBtn, fontSize: 13, padding: '6px 12px'}} onClick={irAHoy}>Hoy</button>
         </div>
       </div>
 
-      <div style={s.controlsRow}>
-        <div style={s.rightControls}>
+      <div style={{ ...s.controlsRow, gap: isMobile ? 6 : 8 }}>
+        <div style={{ ...s.rightControls, flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center' }}>
           <button
             type="button"
-            style={{ ...s.importBtn }}
+            style={{ ...s.importBtn, textAlign: 'center' }}
             onClick={abrirModalIcal}
             title="Configurar URLs de calendarios iCal"
           >
-            📥 Importar desde canales
+            📥 {isMobile ? 'Canales iCal' : 'Importar desde canales'}
           </button>
           <button
             type="button"
-            style={{ ...s.secondaryActionBtn, opacity: syncing ? 0.6 : 1 }}
+            style={{ ...s.secondaryActionBtn, opacity: syncing ? 0.6 : 1, textAlign: 'center' }}
             onClick={() => sincronizarTodo()}
             disabled={Boolean(syncing)}
             title="Volver a leer los calendarios iCal"
           >
             ↻ Sincronizar iCal
           </button>
-          <select style={s.select} value={filtro} onChange={e => setFiltro(e.target.value)}>
+          <select style={{ ...s.select, width: isMobile ? '100%' : 'auto' }} value={filtro} onChange={e => setFiltro(e.target.value)}>
             <option value="todas">Todas las propiedades</option>
             {propiedades.map(p => (
               <option key={p.id} value={p.id}>
@@ -535,12 +556,14 @@ export default function Calendario() {
 
       {/* Leyenda de propiedades */}
       {propiedades.length > 0 && (
-        <div style={s.legend}>
+        <div style={{ ...s.legend, gap: isMobile ? 6 : 10 }}>
           {propiedades.map((p, i) => (
             <button
               key={p.id}
               style={{
                 ...s.legendItem,
+                fontSize: isMobile ? 11 : 13,
+                padding: isMobile ? '3px 8px' : '4px 12px',
                 opacity: filtro !== 'todas' && filtro !== p.id ? 0.4 : (p.activa === false ? 0.65 : 1),
                 borderStyle: p.activa === false ? 'dashed' : 'solid',
               }}
@@ -561,8 +584,8 @@ export default function Calendario() {
       <div style={s.calendarWrapper}>
         {/* Encabezado días de semana */}
         <div style={s.gridHeader}>
-          {DIAS.map(d => (
-            <div key={d} style={s.dayHeaderCell}>{d}</div>
+          {(isMobile ? DIAS_CORTO : DIAS).map(d => (
+            <div key={d} style={{ ...s.dayHeaderCell, fontSize: isMobile ? 10 : 12 }}>{d}</div>
           ))}
         </div>
 
@@ -577,6 +600,8 @@ export default function Calendario() {
                 key={ds}
                 style={{
                   ...s.cell,
+                  minHeight: isMobile ? 52 : 90,
+                  padding: isMobile ? '4px 3px' : '6px 8px',
                   background: actual ? '#ffffff' : '#f8f8f8',
                 }}
               >
@@ -584,35 +609,68 @@ export default function Calendario() {
                 <div style={{
                   ...s.dayNum,
                   ...(esHoy ? s.hoyNum : {}),
+                  fontSize: isMobile ? 11 : 13,
+                  width: isMobile ? 20 : 26,
+                  height: isMobile ? 20 : 26,
                   color: actual ? (esHoy ? '#fff' : '#1a1a1a') : '#c0c0c0',
                 }}>
                   {dia}
                 </div>
 
-                {/* Barras de reservas */}
-                <div style={s.barsContainer}>
-                  {dayRes.slice(0, 3).map(r => (
-                    <button
-                      key={r.id}
-                      onClick={() => setDetalle(r)}
-                      style={{
-                        ...s.bar,
-                        background: propColor(r.propiedad_id),
-                      }}
-                      title={`${r.clientes?.nombre} ${r.clientes?.apellido} — ${r.propiedades?.nombre}`}
-                    >
-                      {r.clientes?.nombre} {r.clientes?.apellido?.[0]}.
-                    </button>
-                  ))}
-                  {dayRes.length > 3 && (
-                    <button
-                      style={s.moreBadgeBtn}
-                      onClick={() => setDiaSeleccionado({ ds, reservas: dayRes })}
-                    >
-                      +{dayRes.length - 3} más
-                    </button>
-                  )}
-                </div>
+                {/* En mobile: solo puntos de color. En desktop: barras con texto */}
+                {isMobile ? (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2, marginTop: 2 }}>
+                    {dayRes.slice(0, 4).map(r => (
+                      <button
+                        key={r.id}
+                        onClick={() => setDetalle(r)}
+                        title={`${r.clientes?.nombre ?? ''} — ${r.propiedades?.nombre ?? ''}`}
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: '50%',
+                          background: propColor(r.propiedad_id),
+                          border: 'none',
+                          padding: 0,
+                          cursor: 'pointer',
+                          flexShrink: 0,
+                        }}
+                      />
+                    ))}
+                    {dayRes.length > 4 && (
+                      <button
+                        onClick={() => setDiaSeleccionado({ ds, reservas: dayRes })}
+                        style={{ fontSize: 8, color: '#2d5a3d', background: 'none', border: 'none', padding: 0, cursor: 'pointer', lineHeight: 1 }}
+                      >
+                        +{dayRes.length - 4}
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div style={s.barsContainer}>
+                    {dayRes.slice(0, 3).map(r => (
+                      <button
+                        key={r.id}
+                        onClick={() => setDetalle(r)}
+                        style={{
+                          ...s.bar,
+                          background: propColor(r.propiedad_id),
+                        }}
+                        title={`${r.clientes?.nombre} ${r.clientes?.apellido} — ${r.propiedades?.nombre}`}
+                      >
+                        {r.clientes?.nombre} {r.clientes?.apellido?.[0]}.
+                      </button>
+                    ))}
+                    {dayRes.length > 3 && (
+                      <button
+                        style={s.moreBadgeBtn}
+                        onClick={() => setDiaSeleccionado({ ds, reservas: dayRes })}
+                      >
+                        +{dayRes.length - 3} más
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             )
           })}
@@ -1268,13 +1326,13 @@ function capitalizar(str) {
 
 // ─── Estilos ──────────────────────────────────────────────────────────────────
 const s = {
-  page:          { maxWidth: 1000, margin: '0 auto', padding: '24px 16px', fontFamily: 'system-ui, -apple-system, sans-serif' },
+  page:          { maxWidth: 1000, margin: '0 auto', fontFamily: 'system-ui, -apple-system, sans-serif' },
   topBar:        { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, gap: 12 },
   controlsRow:   { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 8, marginBottom: 16 },
   navGroup:      { display: 'flex', alignItems: 'center', gap: 8 },
   navBtn:        { padding: '6px 14px', border: '1px solid #ddd', borderRadius: 8, background: '#fff', cursor: 'pointer', fontSize: 18, fontWeight: 500, lineHeight: 1 },
-  monthTitle:    { fontSize: 20, fontWeight: 600, minWidth: 210, textAlign: 'center', letterSpacing: '-0.02em' },
-  rightControls: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  monthTitle:    { fontWeight: 600, textAlign: 'center', letterSpacing: '-0.02em' },
+  rightControls: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', width: '100%' },
   statusRow:     { minHeight: 28, display: 'flex', alignItems: 'center' },
   statusSlot:    { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   loadingBadge:  { fontSize: 12, color: '#888', padding: '4px 10px', background: '#f0f0f0', borderRadius: 12 },
@@ -1288,16 +1346,16 @@ const s = {
   moreBadgeBtn:  { fontSize: 11, color: '#2d5a3d', padding: '2px 6px', cursor: 'pointer', background: 'none', border: 'none', textAlign: 'left', width: '100%', fontWeight: 500 },
 
   legend:     { display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' },
-  legendItem: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#444', background: 'none', border: '1px solid #e8e8e8', borderRadius: 20, padding: '4px 12px', cursor: 'pointer', transition: 'opacity .2s' },
+  legendItem: { display: 'flex', alignItems: 'center', gap: 6, color: '#444', background: 'none', border: '1px solid #e8e8e8', borderRadius: 20, cursor: 'pointer', transition: 'opacity .2s' },
   dot:        { width: 10, height: 10, borderRadius: 3, flexShrink: 0 },
 
   calendarWrapper: { borderRadius: 12, overflow: 'hidden', border: '1px solid #e8e8e8', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' },
   gridHeader:      { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', background: '#f5f5f5' },
-  dayHeaderCell:   { padding: '10px 0', textAlign: 'center', fontSize: 12, fontWeight: 600, color: '#666', letterSpacing: '0.05em', textTransform: 'uppercase' },
+  dayHeaderCell:   { padding: '8px 0', textAlign: 'center', fontWeight: 600, color: '#666', letterSpacing: '0.05em', textTransform: 'uppercase' },
 
   grid:          { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '1px', background: '#e8e8e8' },
-  cell:          { minHeight: 90, padding: '6px 8px', display: 'flex', flexDirection: 'column', gap: 3 },
-  dayNum:        { fontSize: 13, width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', marginBottom: 2, flexShrink: 0 },
+  cell:          { padding: '6px 8px', display: 'flex', flexDirection: 'column', gap: 3 },
+  dayNum:        { display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', marginBottom: 2, flexShrink: 0 },
   hoyNum:        { background: '#2d5a3d', color: '#fff', fontWeight: 700 },
 
   barsContainer: { display: 'flex', flexDirection: 'column', gap: 2, flex: 1 },
@@ -1308,17 +1366,17 @@ const s = {
   resumenLabel: { fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em' },
   resumenValor: { fontSize: 20, fontWeight: 600, color: '#1a1a1a' },
 
-  overlay:      { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 },
-  modal:        { background: '#fff', borderRadius: 16, width: '100%', maxWidth: 460, boxShadow: '0 24px 64px rgba(0,0,0,0.18)', overflow: 'hidden' },
+  overlay:      { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 1000, padding: 0 },
+  modal:        { background: '#fff', borderRadius: '16px 16px 0 0', width: '100%', maxWidth: 480, boxShadow: '0 -8px 40px rgba(0,0,0,0.18)', overflow: 'hidden', maxHeight: '92dvh' },
 
-  modalHeader:      { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '20px 24px 0', paddingLeft: 20 },
-  modalNombre:      { fontSize: 18, fontWeight: 700, letterSpacing: '-0.02em' },
+  modalHeader:      { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '20px 20px 0' },
+  modalNombre:      { fontSize: 17, fontWeight: 700, letterSpacing: '-0.02em' },
   modalPropiedad:   { fontSize: 13, color: '#888', marginTop: 2 },
   modalHeaderRight: { display: 'flex', alignItems: 'center', gap: 10 },
   estadoBadge:      { fontSize: 12, padding: '3px 10px', borderRadius: 20, fontWeight: 600 },
   closeBtn:         { border: 'none', background: 'none', cursor: 'pointer', fontSize: 18, color: '#bbb', padding: 0, lineHeight: 1 },
 
-  modalBody:    { padding: '16px 24px' },
+  modalBody:    { padding: '16px 20px' },
   modalGrid:    { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 24px', marginBottom: 16 },
   datoLabel:    { fontSize: 11, color: '#999', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 2 },
   datoValor:    { fontSize: 14, fontWeight: 500, color: '#1a1a1a' },
@@ -1332,7 +1390,7 @@ const s = {
   estadosBtns:    { display: 'flex', gap: 6, flexWrap: 'wrap' },
   estadoBtn:      { fontSize: 12, padding: '4px 12px', borderRadius: 20, border: 'none', transition: 'opacity .15s' },
 
-  modalFooter:   { display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '16px 24px', borderTop: '1px solid #f0f0f0' },
+  modalFooter:   { display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '16px 20px', borderTop: '1px solid #f0f0f0' },
   btnWA:         { padding: '8px 18px', borderRadius: 8, background: '#25D366', color: '#fff', textDecoration: 'none', fontSize: 14, fontWeight: 500 },
   btnSecundario: { padding: '8px 18px', borderRadius: 8, border: '1px solid #ddd', background: '#fff', cursor: 'pointer', fontSize: 14 },
 }
