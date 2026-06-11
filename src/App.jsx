@@ -31,13 +31,13 @@ function Toast({ msg, onClose }) {
 function Nav() {
   const { pathname } = useLocation()
   const links = [
-    { to: '/',           label: '🏠 Inicio' },
+    { to: '/', label: '🏠 Inicio' },
     { to: '/calendario', label: '📅 Calendario' },
-    { to: '/nueva',      label: '➕ Nueva reserva' },
-    { to: '/mensajes',   label: '💬 Mensajes' },
-    { to: '/recibos',    label: '📄 Recibos' },
-    { to: '/admin',      label: '⚙️ Admin' },
-    { to: '/reporte',      label: '⚙️ Reporte' },
+    { to: '/nueva', label: '➕ Nueva reserva' },
+    { to: '/mensajes', label: '💬 Mensajes' },
+    { to: '/recibos', label: '📄 Recibos' },
+    { to: '/admin', label: '⚙️ Admin' },
+    { to: '/reporte', label: '📊 Reporte' },
   ]
   return (
     <nav style={{
@@ -70,13 +70,13 @@ export default function App() {
     <BrowserRouter>
       <Nav />
       <Routes>
-        <Route path="/"           element={<Dashboard />} />
+        <Route path="/" element={<Dashboard />} />
         <Route path="/calendario" element={<Calendario />} />
-        <Route path="/nueva"      element={<NuevaReserva onExito={() => setToastMsg('Reserva creada correctamente')} />} />
-        <Route path="/mensajes"   element={<GeneradorMensajes />} />
-        <Route path="/recibos"    element={<Recibos />} />
-        <Route path="/admin"      element={<Admin />} />
-         <Route path="/reporte"    element={<Reporte />} />
+        <Route path="/nueva" element={<NuevaReserva onExito={() => setToastMsg('Reserva creada correctamente')} />} />
+        <Route path="/mensajes" element={<GeneradorMensajes />} />
+        <Route path="/recibos" element={<Recibos />} />
+        <Route path="/admin" element={<Admin />} />
+        <Route path="/reporte" element={<Reporte />} />
       </Routes>
       <Toast msg={toastMsg} onClose={() => setToastMsg('')} />
     </BrowserRouter>

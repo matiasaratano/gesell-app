@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { useSearchParams } from 'react-router-dom'
 
 // ─── Constantes ────────────────────────────────────────────────────────────────
 const CANALES = ['whatsapp','mail','telefono','booking','airbnb','directo']
@@ -40,13 +41,19 @@ function diffNoches(desde, hasta) {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 export default function NuevaReserva({ onExito }) {
+  const [searchParams] = useSearchParams()
+  const initialPropId = searchParams.get('propiedad_id') || ''
+  const initialCheckin = searchParams.get('checkin') || ''
+  const initialCheckout = searchParams.get('checkout') || ''
+  const initialEstado = searchParams.get('estado') || 'señada'
+
   const [paso, setPaso] = useState(0)
 
   // Paso 1
   const [propiedades, setPropiedades]   = useState([])
-  const [propId,      setPropId]        = useState('')
-  const [checkin,     setCheckin]       = useState('')
-  const [checkout,    setCheckout]      = useState('')
+  const [propId,      setPropId]        = useState(initialPropId)
+  const [checkin,     setCheckin]       = useState(initialCheckin)
+  const [checkout,    setCheckout]      = useState(initialCheckout)
   const [adultos,     setAdultos]       = useState(2)
   const [menores,     setMenores]       = useState(0)
   const [mascotas,    setMascotas]      = useState(false)
@@ -71,7 +78,7 @@ export default function NuevaReserva({ onExito }) {
 
   // Paso 3
   const [precioTotal, setPrecioTotal]   = useState('')
-  const [estado,      setEstado]        = useState('señada')
+  const [estado,      setEstado]        = useState(initialEstado)
   const [notasInt,    setNotasInt]      = useState('')
   const [guardando,   setGuardando]     = useState(false)
   const [guardError,  setGuardError]    = useState('')

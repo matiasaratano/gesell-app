@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
+import { useNavigate } from 'react-router-dom'
 
 // ─── iCal utilities ─────────────────────────────────────────────────────────────
 function newIcalFeedRow() {
@@ -119,6 +120,22 @@ const DIAS_CORTO  = ['D','L','M','X','J','V','S']
 const COLORES = ['#3B7DD8','#E07B39','#2E9E6B','#9B4FD8','#D83B6A','#0EA5B0','#C97B22','#5B6AD8']
 
 // ─── Hook responsive ─────────────────────────────────────────────────────────
+function useDeviceType() {
+  const [width, setWidth] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth : 1024
+  )
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const handleResize = () => setWidth(window.innerWidth)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  if (width < 600) return 'mobile'
+  if (width < 1024) return 'tablet'
+  return 'desktop'
+}
+
 function useIsMobile(breakpoint = 600) {
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth < breakpoint : false
@@ -168,9 +185,23 @@ function primerDiaSemana(year, month0) {
   return new Date(year, month0, 1).getDay()
 }
 
+function diffNoches(desde, hasta) {
+  if (!desde || !hasta) return 0
+  const [y1, m1, d1] = desde.split('-').map(Number)
+  const [y2, m2, d2] = hasta.split('-').map(Number)
+  const a = new Date(y1, m1 - 1, d1)
+  const b = new Date(y2, m2 - 1, d2)
+  return Math.max(0, Math.round((b - a) / 86400000))
+}
+
 // ─── Componente ────────────────────────────────────────────────────────────────
 export default function Calendario() {
-  const isMobile = useIsMobile()
+  const device = useDeviceType()
+  const isMobile = device === 'mobile'
+  const isTablet = device === 'tablet'
+  const isDesktop = device === 'desktop'
+  const navigate = useNavigate()
+
   const hoy = new Date()
   const autoSyncDoneRef = useRef(false)
   const [year,  setYear]  = useState(hoy.getFullYear())
@@ -188,6 +219,62 @@ export default function Calendario() {
   const [icalDraft,   setIcalDraft]   = useState(null)
   const [diaSeleccionado, setDiaSeleccionado] = useState(null)
   const [lastSyncAt,  setLastSyncAt]  = useState(null)
+
+  // Selección de rango
+  const [rangoInicio, setRangoInicio] = useState(null)
+  const [rangoFin, setRangoFin] = useState(null)
+
+  const reservasSolapadas = useMemo(() => {
+    if (!rangoInicio || !rangoFin) return []
+    return reservas.filter(r => {
+      if (filtro !== 'todas' && r.propiedad_id !== filtro) return false
+      return r.checkin < rangoFin && r.checkout > rangoInicio
+    })
+  }, [rangoInicio, rangoFin, reservas, filtro])
+
+  const handleCellClick = (ds) => {
+    if (!rangoInicio || (rangoInicio && rangoFin)) {
+      setRangoInicio(ds)
+      setRangoFin(null)
+    } else {
+      if (ds < rangoInicio) {
+        setRangoInicio(ds)
+      } else if (ds === rangoInicio) {
+        setRangoInicio(null)
+        setRangoFin(null)
+      } else {
+        setRangoFin(ds)
+      }
+    }
+  }
+
+  const clearRango = () => {
+    setRangoInicio(null)
+    setRangoFin(null)
+  }
+
+  const handleCrearReserva = () => {
+    if (!rangoInicio || !rangoFin) return
+    const query = new URLSearchParams()
+    query.set('checkin', rangoInicio)
+    query.set('checkout', rangoFin)
+    if (filtro !== 'todas') {
+      query.set('propiedad_id', filtro)
+    }
+    query.set('estado', 'pendiente') // Reserva temporal/pendiente
+    navigate(`/nueva?${query.toString()}`)
+  }
+
+  const handleVerModificarReservas = () => {
+    if (reservasSolapadas.length === 1) {
+      setDetalle(reservasSolapadas[0])
+    } else if (reservasSolapadas.length > 1) {
+      setDiaSeleccionado({
+        ds: `${rangoInicio} al ${rangoFin}`,
+        reservas: reservasSolapadas,
+      })
+    }
+  }
 
   async function loadIcalConfigFromSupabase() {
     const { data } = await supabase.from('propiedades').select('id, link_ical_booking, link_ical_airbnb')
@@ -595,35 +682,71 @@ export default function Calendario() {
             const dayRes = reservasDelDia(ds)
             const esHoy  = ds === hoyStr
 
+            // Lógica de selección de rango
+            const isStart = ds === rangoInicio
+            const isEnd = ds === rangoFin
+            const isSelected = rangoInicio && rangoFin && ds > rangoInicio && ds < rangoFin
+            const isSingleSelection = rangoInicio && !rangoFin && ds === rangoInicio
+
+            // Colores de fondo de selección
+            let bgSelection = ''
+            let colorSelection = ''
+            let borderRadiusSelection = ''
+            
+            if (isStart || isEnd || isSingleSelection) {
+              bgSelection = '#2d5a3d'
+              colorSelection = '#ffffff'
+              if (isSingleSelection) {
+                borderRadiusSelection = '8px'
+              } else if (isStart) {
+                borderRadiusSelection = '8px 0 0 8px'
+              } else if (isEnd) {
+                borderRadiusSelection = '0 8px 8px 0'
+              }
+            } else if (isSelected) {
+              bgSelection = '#E8F5EC'
+              colorSelection = '#2d5a3d'
+            }
+
             return (
               <div
                 key={ds}
+                onClick={() => handleCellClick(ds)}
                 style={{
                   ...s.cell,
-                  minHeight: isMobile ? 52 : 90,
-                  padding: isMobile ? '4px 3px' : '6px 8px',
-                  background: actual ? '#ffffff' : '#f8f8f8',
+                  minHeight: isMobile ? 52 : isTablet ? 70 : 90,
+                  padding: isMobile ? '4px 3px' : isTablet ? '4px 6px' : '6px 8px',
+                  background: bgSelection || (actual ? '#ffffff' : '#f8f8f8'),
+                  cursor: 'pointer',
+                  borderRadius: borderRadiusSelection,
+                  transition: 'background-color 0.15s ease, border-radius 0.15s ease',
+                  border: isSingleSelection || isStart || isEnd ? '1px solid #1a3c25' : undefined,
+                  boxSizing: 'border-box',
                 }}
               >
                 {/* Número del día */}
                 <div style={{
                   ...s.dayNum,
                   ...(esHoy ? s.hoyNum : {}),
-                  fontSize: isMobile ? 11 : 13,
-                  width: isMobile ? 20 : 26,
-                  height: isMobile ? 20 : 26,
-                  color: actual ? (esHoy ? '#fff' : '#1a1a1a') : '#c0c0c0',
+                  fontSize: isMobile ? 11 : isTablet ? 12 : 13,
+                  width: isMobile ? 20 : isTablet ? 22 : 26,
+                  height: isMobile ? 20 : isTablet ? 22 : 26,
+                  color: colorSelection || (actual ? (esHoy ? '#fff' : '#1a1a1a') : '#c0c0c0'),
+                  backgroundColor: colorSelection ? 'transparent' : undefined,
                 }}>
                   {dia}
                 </div>
 
-                {/* En mobile: solo puntos de color. En desktop: barras con texto */}
+                {/* En mobile: solo puntos de color. En tablet/desktop: barras con texto */}
                 {isMobile ? (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2, marginTop: 2 }}>
                     {dayRes.slice(0, 4).map(r => (
                       <button
                         key={r.id}
-                        onClick={() => setDetalle(r)}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setDetalle(r)
+                        }}
                         title={`${r.clientes?.nombre ?? ''} — ${r.propiedades?.nombre ?? ''}`}
                         style={{
                           width: 8,
@@ -639,7 +762,10 @@ export default function Calendario() {
                     ))}
                     {dayRes.length > 4 && (
                       <button
-                        onClick={() => setDiaSeleccionado({ ds, reservas: dayRes })}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setDiaSeleccionado({ ds, reservas: dayRes })
+                        }}
                         style={{ fontSize: 8, color: '#2d5a3d', background: 'none', border: 'none', padding: 0, cursor: 'pointer', lineHeight: 1 }}
                       >
                         +{dayRes.length - 4}
@@ -648,25 +774,36 @@ export default function Calendario() {
                   </div>
                 ) : (
                   <div style={s.barsContainer}>
-                    {dayRes.slice(0, 3).map(r => (
+                    {dayRes.slice(0, isTablet ? 2 : 3).map(r => (
                       <button
                         key={r.id}
-                        onClick={() => setDetalle(r)}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setDetalle(r)
+                        }}
                         style={{
                           ...s.bar,
                           background: propColor(r.propiedad_id),
+                          fontSize: isTablet ? 9.5 : 11,
+                          padding: isTablet ? '1px 4px' : '2px 6px',
                         }}
                         title={`${r.clientes?.nombre} ${r.clientes?.apellido} — ${r.propiedades?.nombre}`}
                       >
                         {r.clientes?.nombre} {r.clientes?.apellido?.[0]}.
                       </button>
                     ))}
-                    {dayRes.length > 3 && (
+                    {dayRes.length > (isTablet ? 2 : 3) && (
                       <button
-                        style={s.moreBadgeBtn}
-                        onClick={() => setDiaSeleccionado({ ds, reservas: dayRes })}
+                        style={{
+                          ...s.moreBadgeBtn,
+                          fontSize: isTablet ? 10 : 11,
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setDiaSeleccionado({ ds, reservas: dayRes })
+                        }}
                       >
-                        +{dayRes.length - 3} más
+                        +{dayRes.length - (isTablet ? 2 : 3)} {isTablet ? '' : 'más'}
                       </button>
                     )}
                   </div>
@@ -711,11 +848,54 @@ export default function Calendario() {
           propColor={propColor}
         />
       )}
+
+      {/* Floating range selection action bar */}
+      {rangoInicio && (
+        <div style={{
+          ...s.floatingBar,
+          flexDirection: isMobile ? 'column' : 'row',
+          alignItems: isMobile ? 'stretch' : 'center',
+          textAlign: isMobile ? 'center' : 'left',
+          gap: isMobile ? 12 : 20,
+        }}>
+          <div style={s.floatingBarText}>
+            {rangoFin ? (
+              <span>
+                Seleccionado: <strong>{formatFecha(rangoInicio)}</strong> al <strong>{formatFecha(rangoFin)}</strong> ({diffNoches(rangoInicio, rangoFin)} noches)
+              </span>
+            ) : (
+              <span>
+                Seleccioná la fecha de salida (Check-out) para <strong>{formatFecha(rangoInicio)}</strong>
+              </span>
+            )}
+          </div>
+          <div style={{
+            ...s.floatingBarActions,
+            justifyContent: isMobile ? 'center' : 'flex-end',
+            width: isMobile ? '100%' : 'auto',
+          }}>
+            {rangoFin && (
+              <button style={s.btnPrincipal} onClick={handleCrearReserva}>
+                ➕ Nueva Reserva
+              </button>
+            )}
+            {rangoFin && reservasSolapadas.length > 0 && (
+              <button style={s.btnModificar} onClick={handleVerModificarReservas}>
+                ✏️ {reservasSolapadas.length === 1 ? 'Modificar Reserva' : `Ver Reservas (${reservasSolapadas.length})`}
+              </button>
+            )}
+            <button style={s.btnCancelarRango} onClick={clearRango}>
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 function ModalIcal({ propiedades, draft, setDraft, onGuardar, onClose }) {
+  const isMobile = useIsMobile()
   const [errorProp, setErrorProp] = useState('')
 
   function updateFeed(canal, id, patch) {
@@ -754,9 +934,17 @@ function ModalIcal({ propiedades, draft, setDraft, onGuardar, onClose }) {
     `${p.nombre}${p.activa === false ? ' (cerrada)' : ''}`
 
   return (
-    <div style={s.overlay} onClick={onClose}>
+    <div style={{ ...s.overlay, alignItems: isMobile ? 'flex-end' : 'center', padding: isMobile ? 0 : 20 }} onClick={onClose}>
       <div
-        style={{ ...s.modal, maxWidth: 620, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}
+        style={{
+          ...s.modal,
+          borderRadius: isMobile ? '16px 16px 0 0' : '16px',
+          boxShadow: isMobile ? '0 -8px 40px rgba(0,0,0,0.18)' : '0 10px 40px rgba(0,0,0,0.2)',
+          maxWidth: 620,
+          maxHeight: isMobile ? '92dvh' : '90vh',
+          display: 'flex',
+          flexDirection: 'column'
+        }}
         onClick={e => e.stopPropagation()}
       >
         <div style={{ ...s.modalHeader, borderLeft: '4px solid #2d5a3d', flexShrink: 0 }}>
@@ -959,6 +1147,7 @@ function ResumenMes({ reservas, filtro, propiedades }) {
 
 // ─── Modal de detalle de reserva ──────────────────────────────────────────────
 function ModalDetalle({ reserva: r, color, onClose, onActualizar }) {
+  const isMobile = useIsMobile()
   const [cambiandoEstado, setCambiandoEstado] = useState(false)
   const [editando,        setEditando]        = useState(false)
   const [guardando,       setGuardando]       = useState(false)
@@ -1052,8 +1241,18 @@ function ModalDetalle({ reserva: r, color, onClose, onActualizar }) {
   }
 
   return (
-    <div style={s.overlay} onClick={onClose}>
-      <div style={{ ...s.modal, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+    <div style={{ ...s.overlay, alignItems: isMobile ? 'flex-end' : 'center', padding: isMobile ? 0 : 20 }} onClick={onClose}>
+      <div
+        style={{
+          ...s.modal,
+          borderRadius: isMobile ? '16px 16px 0 0' : '16px',
+          boxShadow: isMobile ? '0 -8px 40px rgba(0,0,0,0.18)' : '0 10px 40px rgba(0,0,0,0.2)',
+          maxHeight: isMobile ? '92dvh' : '90vh',
+          display: 'flex',
+          flexDirection: 'column'
+        }}
+        onClick={e => e.stopPropagation()}
+      >
 
         {/* Encabezado */}
         <div style={{ ...s.modalHeader, borderLeft: `4px solid ${color}`, flexShrink: 0 }}>
@@ -1251,15 +1450,37 @@ function DatoModal({ label, value, highlight }) {
 }
 
 function ModalDiaReservas({ dia, onClose, onVerDetalle, propColor }) {
-  const [y, m, d] = dia.ds.split('-')
-  const fechaFormateada = `${d}/${m}/${y}`
+  const isMobile = useIsMobile()
+  
+  const title = useMemo(() => {
+    if (dia.ds.includes(' al ')) {
+      const [start, end] = dia.ds.split(' al ')
+      const format = (str) => {
+        const [y, m, d] = str.split('-')
+        return `${d}/${m}/${y}`
+      }
+      return `Reservas del ${format(start)} al ${format(end)}`
+    } else {
+      const [y, m, d] = dia.ds.split('-')
+      return `Reservas del ${d}/${m}/${y}`
+    }
+  }, [dia.ds])
   
   return (
-    <div style={s.overlay} onClick={onClose}>
-      <div style={{ ...s.modal, maxWidth: 500 }} onClick={e => e.stopPropagation()}>
+    <div style={{ ...s.overlay, alignItems: isMobile ? 'flex-end' : 'center', padding: isMobile ? 0 : 20 }} onClick={onClose}>
+      <div
+        style={{
+          ...s.modal,
+          borderRadius: isMobile ? '16px 16px 0 0' : '16px',
+          boxShadow: isMobile ? '0 -8px 40px rgba(0,0,0,0.18)' : '0 10px 40px rgba(0,0,0,0.2)',
+          maxWidth: 500,
+          maxHeight: isMobile ? '92dvh' : '90dvh'
+        }}
+        onClick={e => e.stopPropagation()}
+      >
         <div style={{ ...s.modalHeader, borderLeft: '4px solid #2d5a3d' }}>
           <div>
-            <div style={s.modalNombre}>Reservas del {fechaFormateada}</div>
+            <div style={s.modalNombre}>{title}</div>
             <div style={s.modalPropiedad}>{dia.reservas.length} reserva(s) este día</div>
           </div>
           <button style={s.closeBtn} onClick={onClose}>✕</button>
@@ -1393,4 +1614,63 @@ const s = {
   modalFooter:   { display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '16px 20px', borderTop: '1px solid #f0f0f0' },
   btnWA:         { padding: '8px 18px', borderRadius: 8, background: '#25D366', color: '#fff', textDecoration: 'none', fontSize: 14, fontWeight: 500 },
   btnSecundario: { padding: '8px 18px', borderRadius: 8, border: '1px solid #ddd', background: '#fff', cursor: 'pointer', fontSize: 14 },
+
+  floatingBar: {
+    position: 'fixed',
+    bottom: 20,
+    left: '50%',
+    transform: 'translateX(-50%)',
+    background: 'rgba(26, 26, 26, 0.95)',
+    color: '#fff',
+    padding: '12px 24px',
+    borderRadius: 16,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    zIndex: 900,
+    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.24)',
+    width: 'calc(100% - 32px)',
+    maxWidth: 700,
+    boxSizing: 'border-box',
+    backdropFilter: 'blur(8px)',
+  },
+  floatingBarText: {
+    fontSize: 14,
+    fontWeight: 500,
+  },
+  floatingBarActions: {
+    display: 'flex',
+    gap: 8,
+    alignItems: 'center',
+  },
+  btnPrincipal: {
+    background: '#2d5a3d',
+    color: '#fff',
+    border: 'none',
+    padding: '8px 16px',
+    borderRadius: 8,
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
+  btnModificar: {
+    background: '#E07B39',
+    color: '#fff',
+    border: 'none',
+    padding: '8px 16px',
+    borderRadius: 8,
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
+  btnCancelarRango: {
+    background: 'transparent',
+    color: '#ccc',
+    border: 'none',
+    padding: '8px 12px',
+    borderRadius: 8,
+    fontSize: 13,
+    fontWeight: 500,
+    cursor: 'pointer',
+  },
 }
