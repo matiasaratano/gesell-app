@@ -79,12 +79,12 @@ export default function Dashboard() {
         // Propiedades activas
         supabase.from('propiedades').select('id, nombre').eq('activa', true).order('nombre'),
 
-        // Reservas actualmente alojadas: checkin <= hoy < checkout, solo huéspedes reales (excluye cerrada/cancelada)
+        // Reservas actualmente alojadas: checkin <= hoy < checkout, excluye canceladas
         supabase.from('reservas')
           .select('id, checkin, checkout, noches, adultos, precio_total, estado, canal_origen, clientes(nombre, apellido, whatsapp), propiedades(nombre)')
           .lte('checkin', hoy)
           .gt('checkout', hoy)
-          .in('estado', ['activa', 'confirmada', 'señada'])
+          .in('estado', ['activa', 'confirmada', 'señada', 'cerrada'])
           .order('checkout'),
 
         // Ingresan hoy (excluye canceladas y bloqueos de plataforma)
