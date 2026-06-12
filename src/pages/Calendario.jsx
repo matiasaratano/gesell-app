@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 
@@ -220,28 +220,50 @@ export default function Calendario() {
   const [diaSeleccionado, setDiaSeleccionado] = useState(null)
   const [lastSyncAt,  setLastSyncAt]  = useState(null)
 
+  const [vista, setVista] = useState('grilla') // 'grilla' | 'timeline'
+
   // Selección de rango
   const [rangoInicio, setRangoInicio] = useState(null)
   const [rangoFin, setRangoFin] = useState(null)
+  const [rangoPropId, setRangoPropId] = useState(null)
+
+  const diasMesActual = useMemo(() => {
+    const total = ultimoDiaMes(year, month)
+    const arr = []
+    for (let d = 1; d <= total; d++) {
+      const dateStr = toStr(year, month + 1, d)
+      const dow = new Date(year, month, d).getDay()
+      arr.push({
+        d,
+        ds: dateStr,
+        dow,
+      })
+    }
+    return arr
+  }, [year, month])
 
   const reservasSolapadas = useMemo(() => {
     if (!rangoInicio || !rangoFin) return []
+    const targetPropId = rangoPropId || (filtro !== 'todas' ? filtro : null)
     return reservas.filter(r => {
-      if (filtro !== 'todas' && r.propiedad_id !== filtro) return false
+      if (targetPropId && r.propiedad_id !== targetPropId) return false
       return r.checkin < rangoFin && r.checkout > rangoInicio
     })
-  }, [rangoInicio, rangoFin, reservas, filtro])
+  }, [rangoInicio, rangoFin, reservas, filtro, rangoPropId])
 
-  const handleCellClick = (ds) => {
-    if (!rangoInicio || (rangoInicio && rangoFin)) {
+  const handleCellClick = (ds, propId = null) => {
+    if (!rangoInicio || (rangoInicio && rangoFin) || (rangoPropId && rangoPropId !== propId)) {
       setRangoInicio(ds)
       setRangoFin(null)
+      setRangoPropId(propId)
     } else {
       if (ds < rangoInicio) {
         setRangoInicio(ds)
+        setRangoPropId(propId)
       } else if (ds === rangoInicio) {
         setRangoInicio(null)
         setRangoFin(null)
+        setRangoPropId(null)
       } else {
         setRangoFin(ds)
       }
@@ -251,6 +273,7 @@ export default function Calendario() {
   const clearRango = () => {
     setRangoInicio(null)
     setRangoFin(null)
+    setRangoPropId(null)
   }
 
   const handleCrearReserva = () => {
@@ -258,8 +281,9 @@ export default function Calendario() {
     const query = new URLSearchParams()
     query.set('checkin', rangoInicio)
     query.set('checkout', rangoFin)
-    if (filtro !== 'todas') {
-      query.set('propiedad_id', filtro)
+    const selectedPropId = rangoPropId || (filtro !== 'todas' ? filtro : '')
+    if (selectedPropId) {
+      query.set('propiedad_id', selectedPropId)
     }
     query.set('estado', 'pendiente') // Reserva temporal/pendiente
     navigate(`/nueva?${query.toString()}`)
@@ -575,6 +599,44 @@ export default function Calendario() {
           <button style={s.navBtn} onClick={() => navMes(1)}  aria-label="Mes siguiente">›</button>
           <button style={{...s.navBtn, fontSize: 13, padding: '6px 12px'}} onClick={irAHoy}>Hoy</button>
         </div>
+
+        {/* Toggle de vistas */}
+        <div style={{ display: 'flex', gap: 4, background: '#f0f0f0', padding: 3, borderRadius: 10 }}>
+          <button
+            type="button"
+            onClick={() => setVista('grilla')}
+            style={{
+              border: 'none',
+              padding: '6px 12px',
+              borderRadius: 8,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              background: vista === 'grilla' ? '#2d5a3d' : 'transparent',
+              color: vista === 'grilla' ? '#fff' : '#555',
+              transition: 'all 0.2s',
+            }}
+          >
+            📅 Grilla
+          </button>
+          <button
+            type="button"
+            onClick={() => setVista('timeline')}
+            style={{
+              border: 'none',
+              padding: '6px 12px',
+              borderRadius: 8,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              background: vista === 'timeline' ? '#2d5a3d' : 'transparent',
+              color: vista === 'timeline' ? '#fff' : '#555',
+              transition: 'all 0.2s',
+            }}
+          >
+            📈 Timeline
+          </button>
+        </div>
       </div>
 
       <div style={{ ...s.controlsRow, gap: isMobile ? 6 : 8 }}>
@@ -667,152 +729,169 @@ export default function Calendario() {
         </div>
       )}
 
-      {/* Grid del calendario */}
-      <div style={s.calendarWrapper}>
-        {/* Encabezado días de semana */}
-        <div style={s.gridHeader}>
-          {(isMobile ? DIAS_CORTO : DIAS).map(d => (
-            <div key={d} style={{ ...s.dayHeaderCell, fontSize: isMobile ? 10 : 12 }}>{d}</div>
-          ))}
-        </div>
+      {/* Grid del calendario / Timeline */}
+      {vista === 'timeline' ? (
+        <TimelineView
+          dias={diasMesActual}
+          propiedades={propiedades}
+          reservas={reservas}
+          filtro={filtro}
+          rangoInicio={rangoInicio}
+          rangoFin={rangoFin}
+          rangoPropId={rangoPropId}
+          handleCellClick={handleCellClick}
+          setDetalle={setDetalle}
+          setDiaSeleccionado={setDiaSeleccionado}
+          propColor={propColor}
+          formatFecha={formatFecha}
+        />
+      ) : (
+        <div style={s.calendarWrapper}>
+          {/* Encabezado días de semana */}
+          <div style={s.gridHeader}>
+            {(isMobile ? DIAS_CORTO : DIAS).map(d => (
+              <div key={d} style={{ ...s.dayHeaderCell, fontSize: isMobile ? 10 : 12 }}>{d}</div>
+            ))}
+          </div>
 
-        {/* Celdas */}
-        <div style={s.grid}>
-          {celdas.map(({ ds, actual, dia }) => {
-            const dayRes = reservasDelDia(ds)
-            const esHoy  = ds === hoyStr
+          {/* Celdas */}
+          <div style={s.grid}>
+            {celdas.map(({ ds, actual, dia }) => {
+              const dayRes = reservasDelDia(ds)
+              const esHoy  = ds === hoyStr
 
-            // Lógica de selección de rango
-            const isStart = ds === rangoInicio
-            const isEnd = ds === rangoFin
-            const isSelected = rangoInicio && rangoFin && ds > rangoInicio && ds < rangoFin
-            const isSingleSelection = rangoInicio && !rangoFin && ds === rangoInicio
+              // Lógica de selección de rango
+              const isStart = ds === rangoInicio
+              const isEnd = ds === rangoFin
+              const isSelected = rangoInicio && rangoFin && ds > rangoInicio && ds < rangoFin
+              const isSingleSelection = rangoInicio && !rangoFin && ds === rangoInicio
 
-            // Colores de fondo de selección
-            let bgSelection = ''
-            let colorSelection = ''
-            let borderRadiusSelection = ''
-            
-            if (isStart || isEnd || isSingleSelection) {
-              bgSelection = '#2d5a3d'
-              colorSelection = '#ffffff'
-              if (isSingleSelection) {
-                borderRadiusSelection = '8px'
-              } else if (isStart) {
-                borderRadiusSelection = '8px 0 0 8px'
-              } else if (isEnd) {
-                borderRadiusSelection = '0 8px 8px 0'
+              // Colores de fondo de selección
+              let bgSelection = ''
+              let colorSelection = ''
+              let borderRadiusSelection = ''
+              
+              if (isStart || isEnd || isSingleSelection) {
+                bgSelection = '#2d5a3d'
+                colorSelection = '#ffffff'
+                if (isSingleSelection) {
+                  borderRadiusSelection = '8px'
+                } else if (isStart) {
+                  borderRadiusSelection = '8px 0 0 8px'
+                } else if (isEnd) {
+                  borderRadiusSelection = '0 8px 8px 0'
+                }
+              } else if (isSelected) {
+                bgSelection = '#E8F5EC'
+                colorSelection = '#2d5a3d'
               }
-            } else if (isSelected) {
-              bgSelection = '#E8F5EC'
-              colorSelection = '#2d5a3d'
-            }
 
-            return (
-              <div
-                key={ds}
-                onClick={() => handleCellClick(ds)}
-                style={{
-                  ...s.cell,
-                  minHeight: isMobile ? 52 : isTablet ? 70 : 90,
-                  padding: isMobile ? '4px 3px' : isTablet ? '4px 6px' : '6px 8px',
-                  background: bgSelection || (actual ? '#ffffff' : '#f8f8f8'),
-                  cursor: 'pointer',
-                  borderRadius: borderRadiusSelection,
-                  transition: 'background-color 0.15s ease, border-radius 0.15s ease',
-                  border: isSingleSelection || isStart || isEnd ? '1px solid #1a3c25' : undefined,
-                  boxSizing: 'border-box',
-                }}
-              >
-                {/* Número del día */}
-                <div style={{
-                  ...s.dayNum,
-                  ...(esHoy ? s.hoyNum : {}),
-                  fontSize: isMobile ? 11 : isTablet ? 12 : 13,
-                  width: isMobile ? 20 : isTablet ? 22 : 26,
-                  height: isMobile ? 20 : isTablet ? 22 : 26,
-                  color: colorSelection || (actual ? (esHoy ? '#fff' : '#1a1a1a') : '#c0c0c0'),
-                  backgroundColor: colorSelection ? 'transparent' : undefined,
-                }}>
-                  {dia}
+              return (
+                <div
+                  key={ds}
+                  onClick={() => handleCellClick(ds, filtro !== 'todas' ? filtro : null)}
+                  style={{
+                    ...s.cell,
+                    minHeight: isMobile ? 52 : isTablet ? 70 : 90,
+                    padding: isMobile ? '4px 3px' : isTablet ? '4px 6px' : '6px 8px',
+                    background: bgSelection || (actual ? '#ffffff' : '#f8f8f8'),
+                    cursor: 'pointer',
+                    borderRadius: borderRadiusSelection,
+                    transition: 'background-color 0.15s ease, border-radius 0.15s ease',
+                    border: isSingleSelection || isStart || isEnd ? '1px solid #1a3c25' : undefined,
+                    boxSizing: 'border-box',
+                  }}
+                >
+                  {/* Número del día */}
+                  <div style={{
+                    ...s.dayNum,
+                    ...(esHoy ? s.hoyNum : {}),
+                    fontSize: isMobile ? 11 : isTablet ? 12 : 13,
+                    width: isMobile ? 20 : isTablet ? 22 : 26,
+                    height: isMobile ? 20 : isTablet ? 22 : 26,
+                    color: colorSelection || (actual ? (esHoy ? '#fff' : '#1a1a1a') : '#c0c0c0'),
+                    backgroundColor: colorSelection ? 'transparent' : undefined,
+                  }}>
+                    {dia}
+                  </div>
+
+                  {/* En mobile: solo puntos de color. En tablet/desktop: barras con texto */}
+                  {isMobile ? (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2, marginTop: 2 }}>
+                      {dayRes.slice(0, 4).map(r => (
+                        <button
+                          key={r.id}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setDetalle(r)
+                          }}
+                          title={`${r.clientes?.nombre ?? ''} — ${r.propiedades?.nombre ?? ''}`}
+                          style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: '50%',
+                            background: propColor(r.propiedad_id),
+                            border: 'none',
+                            padding: 0,
+                            cursor: 'pointer',
+                            flexShrink: 0,
+                          }}
+                        />
+                      ))}
+                      {dayRes.length > 4 && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setDiaSeleccionado({ ds, reservas: dayRes })
+                          }}
+                          style={{ fontSize: 8, color: '#2d5a3d', background: 'none', border: 'none', padding: 0, cursor: 'pointer', lineHeight: 1 }}
+                        >
+                          +{dayRes.length - 4}
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={s.barsContainer}>
+                      {dayRes.slice(0, isTablet ? 2 : 3).map(r => (
+                        <button
+                          key={r.id}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setDetalle(r)
+                          }}
+                          style={{
+                            ...s.bar,
+                            background: propColor(r.propiedad_id),
+                            fontSize: isTablet ? 9.5 : 11,
+                            padding: isTablet ? '1px 4px' : '2px 6px',
+                          }}
+                          title={`${r.clientes?.nombre} ${r.clientes?.apellido} — ${r.propiedades?.nombre}`}
+                        >
+                          {r.clientes?.nombre} {r.clientes?.apellido?.[0]}.
+                        </button>
+                      ))}
+                      {dayRes.length > (isTablet ? 2 : 3) && (
+                        <button
+                          style={{
+                            ...s.moreBadgeBtn,
+                            fontSize: isTablet ? 10 : 11,
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setDiaSeleccionado({ ds, reservas: dayRes })
+                          }}
+                        >
+                          +{dayRes.length - (isTablet ? 2 : 3)} {isTablet ? '' : 'más'}
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
-
-                {/* En mobile: solo puntos de color. En tablet/desktop: barras con texto */}
-                {isMobile ? (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2, marginTop: 2 }}>
-                    {dayRes.slice(0, 4).map(r => (
-                      <button
-                        key={r.id}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setDetalle(r)
-                        }}
-                        title={`${r.clientes?.nombre ?? ''} — ${r.propiedades?.nombre ?? ''}`}
-                        style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: '50%',
-                          background: propColor(r.propiedad_id),
-                          border: 'none',
-                          padding: 0,
-                          cursor: 'pointer',
-                          flexShrink: 0,
-                        }}
-                      />
-                    ))}
-                    {dayRes.length > 4 && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setDiaSeleccionado({ ds, reservas: dayRes })
-                        }}
-                        style={{ fontSize: 8, color: '#2d5a3d', background: 'none', border: 'none', padding: 0, cursor: 'pointer', lineHeight: 1 }}
-                      >
-                        +{dayRes.length - 4}
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <div style={s.barsContainer}>
-                    {dayRes.slice(0, isTablet ? 2 : 3).map(r => (
-                      <button
-                        key={r.id}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setDetalle(r)
-                        }}
-                        style={{
-                          ...s.bar,
-                          background: propColor(r.propiedad_id),
-                          fontSize: isTablet ? 9.5 : 11,
-                          padding: isTablet ? '1px 4px' : '2px 6px',
-                        }}
-                        title={`${r.clientes?.nombre} ${r.clientes?.apellido} — ${r.propiedades?.nombre}`}
-                      >
-                        {r.clientes?.nombre} {r.clientes?.apellido?.[0]}.
-                      </button>
-                    ))}
-                    {dayRes.length > (isTablet ? 2 : 3) && (
-                      <button
-                        style={{
-                          ...s.moreBadgeBtn,
-                          fontSize: isTablet ? 10 : 11,
-                        }}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setDiaSeleccionado({ ds, reservas: dayRes })
-                        }}
-                      >
-                        +{dayRes.length - (isTablet ? 2 : 3)} {isTablet ? '' : 'más'}
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            )
-          })}
+              )
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Resumen del mes */}
       <ResumenMes reservas={reservas} filtro={filtro} propiedades={propiedades} />
@@ -1103,6 +1182,258 @@ function IcalImportChannel({
       >
         + Agregar otro listing de {nombre}
       </button>
+    </div>
+  )
+}
+
+// ─── Componente Timeline Horizontal ───────────────────────────────────────────
+function TimelineView({
+  dias,
+  propiedades,
+  reservas,
+  filtro,
+  rangoInicio,
+  rangoFin,
+  rangoPropId,
+  handleCellClick,
+  setDetalle,
+  setDiaSeleccionado,
+  propColor,
+  formatFecha,
+}) {
+  const device = useDeviceType()
+  const isMobile = device === 'mobile'
+  const totalDias = dias.length
+
+  // Filtrar propiedades a mostrar
+  const propsVisibles = propiedades.filter(p => filtro === 'todas' || p.id === filtro)
+
+  return (
+    <div style={{
+      borderRadius: 12,
+      border: '1px solid #e8e8e8',
+      boxShadow: '0 2px 12px rgba(0,0,0,0.06)',
+      overflow: 'hidden',
+      background: '#fff',
+      marginBottom: 16,
+    }}>
+      {/* Contenedor scrolleable */}
+      <div style={{ overflowX: 'auto', width: '100%' }}>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: `130px repeat(${totalDias}, 44px)`,
+          minWidth: 130 + totalDias * 44,
+          background: '#e8e8e8',
+          gap: '1px',
+        }}>
+          
+          {/* Fila de cabecera: Esquina + Días del mes */}
+          <div style={{
+            background: '#f5f5f5',
+            padding: '10px 8px',
+            fontWeight: 600,
+            fontSize: 11,
+            color: '#666',
+            display: 'flex',
+            alignItems: 'center',
+            position: 'sticky',
+            left: 0,
+            zIndex: 20,
+            borderRight: '2px solid #ddd',
+            textTransform: 'uppercase',
+            letterSpacing: '0.04em',
+          }}>
+            Propiedad
+          </div>
+          {dias.map(day => {
+            const esFinde = day.dow === 0 || day.dow === 6
+            return (
+              <div
+                key={day.d}
+                style={{
+                  background: esFinde ? '#ececec' : '#f5f5f5',
+                  padding: '8px 0',
+                  textAlign: 'center',
+                  fontWeight: 600,
+                  fontSize: 10,
+                  color: '#666',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 2,
+                }}
+              >
+                <span style={{ fontSize: 12, color: '#1a1a1a' }}>{day.d}</span>
+                <span style={{ fontSize: 9, textTransform: 'uppercase', opacity: 0.7 }}>
+                  {DIAS_CORTO[day.dow]}
+                </span>
+              </div>
+            )
+          })}
+
+          {/* Filas por Propiedad */}
+          {propsVisibles.map((prop, propIdx) => {
+            const rowGridIndex = propIdx + 2 // Cabecera es fila 1
+
+            // Obtener reservas de esta propiedad
+            const reservasProp = reservas.filter(
+              r => r.propiedad_id === prop.id && r.estado !== 'cancelada'
+            )
+
+            return (
+              <Fragment key={prop.id}>
+                {/* Columna Sticky: Nombre de la propiedad */}
+                <div style={{
+                  gridColumn: 1,
+                  gridRow: rowGridIndex,
+                  background: '#ffffff',
+                  padding: '12px 10px',
+                  fontWeight: 600,
+                  fontSize: 12,
+                  color: '#333',
+                  display: 'flex',
+                  alignItems: 'center',
+                  position: 'sticky',
+                  left: 0,
+                  zIndex: 10,
+                  borderRight: '2px solid #ddd',
+                  boxShadow: '4px 0 8px rgba(0,0,0,0.03)',
+                  height: 52,
+                  boxSizing: 'border-box',
+                }}>
+                  <span style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    background: propColor(prop.id),
+                    marginRight: 6,
+                    display: 'inline-block',
+                  }} />
+                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {prop.nombre}
+                  </span>
+                </div>
+
+                {/* Celdas de días (Fondo interactivo) */}
+                {dias.map((day, dIdx) => {
+                  const ds = day.ds
+                  
+                  // Lógica de selección de rango específica de la propiedad
+                  const isStart = ds === rangoInicio && rangoPropId === prop.id
+                  const isEnd = ds === rangoFin && rangoPropId === prop.id
+                  const isSelected = rangoInicio && rangoFin && ds > rangoInicio && ds < rangoFin && rangoPropId === prop.id
+                  const isSingleSelection = rangoInicio && !rangoFin && ds === rangoInicio && rangoPropId === prop.id
+
+                  let bgCell = day.dow === 0 || day.dow === 6 ? '#fafafa' : '#ffffff'
+                  let borderRadiusSelection = ''
+                  
+                  if (isStart || isEnd || isSingleSelection) {
+                    bgCell = '#2d5a3d'
+                    if (isSingleSelection) {
+                      borderRadiusSelection = '8px'
+                    } else if (isStart) {
+                      borderRadiusSelection = '8px 0 0 8px'
+                    } else if (isEnd) {
+                      borderRadiusSelection = '0 8px 8px 0'
+                    }
+                  } else if (isSelected) {
+                    bgCell = '#E8F5EC'
+                  }
+
+                  return (
+                    <div
+                      key={day.d}
+                      onClick={() => handleCellClick(ds, prop.id)}
+                      style={{
+                        gridColumn: dIdx + 2,
+                        gridRow: rowGridIndex,
+                        background: bgCell,
+                        cursor: 'pointer',
+                        borderRadius: borderRadiusSelection,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        height: 52,
+                        boxSizing: 'border-box',
+                        position: 'relative',
+                        borderBottom: '1px solid #e8e8e8',
+                      }}
+                    />
+                  )
+                })}
+
+                {/* Reservas superpuestas */}
+                {reservasProp.map(r => {
+                  const checkinStr = r.checkin
+                  const checkoutStr = r.checkout
+
+                  // Si la reserva está fuera del mes visible, no la renderizamos
+                  const firstDayStr = dias[0].ds
+                  const lastDayStr = dias[dias.length - 1].ds
+                  if (checkoutStr < firstDayStr || checkinStr > lastDayStr) {
+                    return null
+                  }
+
+                  // Mapear check-in a columna
+                  let startCol = 2
+                  if (checkinStr >= firstDayStr) {
+                    const dayNum = Number(checkinStr.split('-')[2])
+                    startCol = dayNum + 1 // +1 por columna de prop (1)
+                  }
+
+                  // Mapear check-out a columna
+                  let endCol = totalDias + 2
+                  if (checkoutStr <= lastDayStr) {
+                    const dayNum = Number(checkoutStr.split('-')[2])
+                    endCol = dayNum + 1
+                  }
+
+                  // Validar rango
+                  if (startCol >= endCol) return null
+
+                  return (
+                    <button
+                      key={r.id}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setDetalle(r)
+                      }}
+                      style={{
+                        gridColumnStart: startCol,
+                        gridColumnEnd: endCol,
+                        gridRow: rowGridIndex,
+                        margin: '6px 2px',
+                        padding: '4px 8px',
+                        background: propColor(r.propiedad_id),
+                        border: 'none',
+                        borderRadius: 6,
+                        color: '#ffffff',
+                        fontSize: 10,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        zIndex: 5,
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        textAlign: 'left',
+                        display: 'flex',
+                        alignItems: 'center',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.12)',
+                        height: 38,
+                        alignSelf: 'center',
+                      }}
+                      title={`${r.clientes?.nombre} ${r.clientes?.apellido} — ${r.propiedades?.nombre} (${formatFecha(r.checkin)} al ${formatFecha(r.checkout)})`}
+                    >
+                      {r.clientes?.nombre} {r.clientes?.apellido?.[0]}.
+                    </button>
+                  )
+                })}
+              </Fragment>
+            )
+          })}
+        </div>
+      </div>
     </div>
   )
 }
