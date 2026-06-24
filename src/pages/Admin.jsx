@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { useSearchParams } from 'react-router-dom'
 
 const SECCIONES = [
   { id: 'propiedades', label: '🏠 Propiedades' },
@@ -41,7 +42,16 @@ function AdminCheckField({ label, campo, editando, setEditando }) {
 }
 
 export default function Admin() {
-  const [seccion, setSeccion] = useState('propiedades')
+  const [searchParams] = useSearchParams()
+  const initialSeccion = searchParams.get('seccion') || 'propiedades'
+  const [seccion, setSeccion] = useState(initialSeccion)
+
+  useEffect(() => {
+    const s = searchParams.get('seccion')
+    if (s && ['propiedades', 'reservas', 'clientes'].includes(s)) {
+      setSeccion(s)
+    }
+  }, [searchParams])
 
   return (
     <div style={s.page}>
@@ -225,10 +235,22 @@ function CRUDReservas() {
   const [filtroEstado, setFiltroEstado] = useState('todas')
   const [filtroProp,   setFiltroProp]   = useState('todas')
 
+  const [searchParams, setSearchParams] = useSearchParams()
+  const editReservaId = searchParams.get('reserva_id')
+
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(''), 2200) }
 
   async function cargar() {
     setLoading(true)
+    const hoy = new Date().toISOString().split('T')[0]
+
+    // Automatización: Finalizar reservas cuya fecha de checkout ya pasó
+    await supabase
+      .from('reservas')
+      .update({ estado: 'finalizada' })
+      .lt('checkout', hoy)
+      .not('estado', 'in', '("finalizada","cancelada")')
+
     const [resRes, resProp, resClientes] = await Promise.all([
       supabase
         .from('reservas')
@@ -245,6 +267,20 @@ function CRUDReservas() {
   }
 
   useEffect(() => { cargar() }, [])
+
+  // Auto-abrir reserva para editar si viene en la URL
+  useEffect(() => {
+    if (editReservaId && lista.length > 0 && !editando) {
+      const res = lista.find(r => String(r.id) === String(editReservaId))
+      if (res) {
+        setEditando({ ...res })
+        // Limpiar el parámetro de la URL
+        const newParams = new URLSearchParams(searchParams)
+        newParams.delete('reserva_id')
+        setSearchParams(newParams)
+      }
+    }
+  }, [editReservaId, lista, editando, searchParams, setSearchParams])
 
   async function guardar() {
     if (!editando.cliente_id) { showToast('Seleccioná un cliente'); return }
@@ -281,21 +317,28 @@ function CRUDReservas() {
     return Math.round(diff / (1000 * 60 * 60 * 24))
   }
 
-  const ESTADOS = ['pendiente', 'señada', 'confirmada', 'activa', 'finalizada', 'cancelada']
+  const ESTADOS = ['pendiente', 'confirmada', 'finalizada']
 
   const COLORES_ESTADO = {
     pendiente:  { bg: '#F3E8FF', color: '#6B21A8' },
-    señada:     { bg: '#FEF3C7', color: '#92400E' },
     confirmada: { bg: '#D1FAE5', color: '#065F46' },
-    activa:     { bg: '#DBEAFE', color: '#1E40AF' },
     finalizada: { bg: '#F3F4F6', color: '#374151' },
+    // Soporte para colores viejos si existen en la BD todavía
+    señada:     { bg: '#FEF3C7', color: '#92400E' },
+    activa:     { bg: '#DBEAFE', color: '#1E40AF' },
     cerrada:    { bg: '#E5E7EB', color: '#4B5563' },
     cancelada:  { bg: '#FEE2E2', color: '#991B1B' },
   }
 
   const ESTADO_LABELS = {
-    pendiente: 'Pendiente', señada: 'Seña', confirmada: 'Confirmada', activa: 'Activa',
-    finalizada: 'Finalizada', cancelada: 'Cancelada'
+    pendiente: 'Pendiente',
+    confirmada: 'Confirmada',
+    finalizada: 'Finalizada',
+    // Soporte para labels viejos
+    señada: 'Seña',
+    activa: 'Activa',
+    cerrada: 'Cerrada',
+    cancelada: 'Cancelada',
   }
 
   const vacio = {
@@ -307,7 +350,7 @@ function CRUDReservas() {
     menores: 0,
     mascotas: false,
     precio_total: '',
-    estado: 'señada',
+    estado: 'pendiente',
     notas_internas: '',
     canal_origen: 'manual',
   }

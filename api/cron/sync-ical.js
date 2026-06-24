@@ -74,7 +74,7 @@ async function upsertReservas(supabase, eventos, propiedadId, canal) {
       checkin,
       checkout,
       canal_origen: canal,
-      estado: esCerrada ? 'cerrada' : 'confirmada',
+      estado: esCerrada ? 'confirmada' : 'pendiente',
     }
 
     const { data: overlaps, error } = await supabase

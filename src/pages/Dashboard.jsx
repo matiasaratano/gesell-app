@@ -58,7 +58,6 @@ export default function Dashboard() {
   const [alojadas,   setAlojadas]   = useState([])
   const [ingresan,   setIngresan]   = useState([])
   const [salen,      setSalen]      = useState([])
-  const [clientes,   setClientes]   = useState([])
   const [solicitudes,setSolicitudes] = useState([])
   const [propiedades,setPropiedades] = useState([])
   const [loading,    setLoading]    = useState(true)
@@ -74,7 +73,16 @@ export default function Dashboard() {
   async function cargar() {
     setLoading(true)
     try {
-      const [rProps, rAlojadas, rIngresan, rSalen, rClientes, rSolicitudes] = await Promise.all([
+      const hoy = hoyStr()
+
+      // Automatización: Finalizar reservas cuya fecha de checkout ya pasó
+      await supabase
+        .from('reservas')
+        .update({ estado: 'finalizada' })
+        .lt('checkout', hoy)
+        .not('estado', 'in', '("finalizada","cancelada")')
+
+      const [rProps, rAlojadas, rIngresan, rSalen, rSolicitudes] = await Promise.all([
 
         // Propiedades activas
         supabase.from('propiedades').select('id, nombre').eq('activa', true).order('nombre'),
@@ -84,7 +92,7 @@ export default function Dashboard() {
           .select('id, checkin, checkout, noches, adultos, precio_total, estado, canal_origen, clientes(nombre, apellido, whatsapp), propiedades(nombre)')
           .lte('checkin', hoy)
           .gt('checkout', hoy)
-          .in('estado', ['activa', 'confirmada', 'señada', 'cerrada'])
+          .in('estado', ['confirmada', 'pendiente', 'activa', 'señada', 'cerrada'])
           .order('checkout'),
 
         // Ingresan hoy (excluye canceladas y bloqueos de plataforma)
@@ -101,12 +109,6 @@ export default function Dashboard() {
           .not('estado', 'in', '("cancelada","cerrada")')
           .order('propiedades(nombre)'),
 
-        // Últimos clientes cargados
-        supabase.from('clientes')
-          .select('id, nombre, apellido, whatsapp, ciudad, created_at')
-          .order('created_at', { ascending: false })
-          .limit(5),
-
         // Últimas solicitudes (reservas en estado señada/pendiente recientes)
         supabase.from('reservas')
           .select('id, checkin, checkout, estado, canal_origen, created_at, clientes(nombre, apellido), propiedades(nombre)')
@@ -119,7 +121,6 @@ export default function Dashboard() {
       setAlojadas(rAlojadas.data ?? [])
       setIngresan(rIngresan.data ?? [])
       setSalen(rSalen.data ?? [])
-      setClientes(rClientes.data ?? [])
       setSolicitudes(rSolicitudes.data ?? [])
     } catch (e) {
       // silencioso — cada sección maneja su propio vacío
@@ -168,29 +169,62 @@ export default function Dashboard() {
               icono="←"
             />
             <MetricaCard
-              valor={propiedades.length}
-              label="Propiedades activas"
-              color="#374151"
-              bg="#F3F4F6"
-              icono="🔑"
+              valor={solicitudes.length}
+              label="Pendientes"
+              color="#6B21A8"
+              bg="#F3E8FF"
+              icono="📋"
             />
           </div>
 
-          {/* ── Fila 2: alojadas + movimientos de hoy ── */}
+          {/* ── Grilla de 2 columnas de reservas ── */}
           <div style={s.grid2}>
+            {/* Columna Izquierda: Alojadas ahora + Solicitudes pendientes */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <Seccion titulo="Alojadas ahora" badge={alojadas.length} accion={{ label: 'Ver calendario', to: '/calendario' }}>
+                {alojadas.length === 0 ? (
+                  <Vacio texto="No hay huéspedes alojados en este momento" />
+                ) : (
+                  alojadas.map(r => (
+                    <FilaReserva key={r.id} reserva={r} mostrarProp />
+                  ))
+                )}
+              </Seccion>
 
-            {/* Alojadas ahora */}
-            <Seccion titulo="Alojadas ahora" badge={alojadas.length} accion={{ label: 'Ver calendario', to: '/calendario' }}>
-              {alojadas.length === 0 ? (
-                <Vacio texto="No hay huéspedes alojados en este momento" />
-              ) : (
-                alojadas.map(r => (
-                  <FilaReserva key={r.id} reserva={r} mostrarProp />
-                ))
-              )}
-            </Seccion>
+              <Seccion titulo="Solicitudes pendientes" badge={solicitudes.length} accion={{ label: 'Admin', to: '/admin?seccion=reservas' }}>
+                {solicitudes.length === 0 ? (
+                  <Vacio texto="No hay reservas pendientes de confirmar" />
+                ) : (
+                  solicitudes.map(r => (
+                    <Link
+                      key={r.id}
+                      to={`/admin?seccion=reservas&reserva_id=${r.id}`}
+                      style={s.filaSolicitudLink}
+                      className="fila-clickeable"
+                    >
+                      <div style={s.filaSolicitudLeft}>
+                        <div style={s.nombre}>
+                          {CANAL_ICON[r.canal_origen] || '📋'}{' '}
+                          {r.clientes?.nombre} {r.clientes?.apellido}
+                        </div>
+                        <div style={s.sub}>
+                          {r.propiedades?.nombre} · {fmtFecha(r.checkin)} → {fmtFecha(r.checkout)}
+                        </div>
+                      </div>
+                      <span style={{
+                        ...s.estadoBadge,
+                        background: ESTADO_STYLE[r.estado]?.bg ?? '#f0f0f0',
+                        color:      ESTADO_STYLE[r.estado]?.color ?? '#333',
+                      }}>
+                        {r.estado}
+                      </span>
+                    </Link>
+                  ))
+                )}
+              </Seccion>
+            </div>
 
-            {/* Check-ins y check-outs del día */}
+            {/* Columna Derecha: Ingresan hoy + Salen hoy */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <Seccion titulo="Ingresan hoy" badge={ingresan.length} accion={{ label: '+ Nueva', to: '/nueva' }}>
                 {ingresan.length === 0 ? (
@@ -208,69 +242,6 @@ export default function Dashboard() {
                 )}
               </Seccion>
             </div>
-          </div>
-
-          {/* ── Fila 3: clientes + solicitudes ── */}
-          <div style={s.grid2}>
-
-            {/* Últimas solicitudes pendientes */}
-            <Seccion titulo="Solicitudes pendientes" badge={solicitudes.length} accion={{ label: 'Admin', to: '/admin' }}>
-              {solicitudes.length === 0 ? (
-                <Vacio texto="No hay reservas pendientes de confirmar" />
-              ) : (
-                solicitudes.map(r => (
-                  <div key={r.id} style={s.filaSolicitud}>
-                    <div style={s.filaSolicitudLeft}>
-                      <div style={s.nombre}>
-                        {CANAL_ICON[r.canal_origen] || '📋'}{' '}
-                        {r.clientes?.nombre} {r.clientes?.apellido}
-                      </div>
-                      <div style={s.sub}>
-                        {r.propiedades?.nombre} · {fmtFecha(r.checkin)} → {fmtFecha(r.checkout)}
-                      </div>
-                    </div>
-                    <span style={{
-                      ...s.estadoBadge,
-                      background: ESTADO_STYLE[r.estado]?.bg ?? '#f0f0f0',
-                      color:      ESTADO_STYLE[r.estado]?.color ?? '#333',
-                    }}>
-                      {r.estado}
-                    </span>
-                  </div>
-                ))
-              )}
-            </Seccion>
-
-            {/* Últimos clientes */}
-            <Seccion titulo="Últimos clientes" badge={clientes.length} accion={{ label: 'Ver todos', to: '/admin' }}>
-              {clientes.length === 0 ? (
-                <Vacio texto="No hay clientes registrados aún" />
-              ) : (
-                clientes.map(c => (
-                  <div key={c.id} style={s.filaCliente}>
-                    <div style={s.clienteAvatar}>
-                      {(c.nombre?.[0] ?? '?').toUpperCase()}
-                    </div>
-                    <div style={s.filaClienteInfo}>
-                      <div style={s.nombre}>{c.nombre} {c.apellido}</div>
-                      <div style={s.sub}>
-                        {c.ciudad || 'Sin ciudad'}{c.whatsapp ? ` · ${c.whatsapp}` : ''}
-                      </div>
-                    </div>
-                    {c.whatsapp && (
-                      <a
-                        href={`https://wa.me/${c.whatsapp.replace(/\D/g,'')}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={s.btnWA}
-                      >
-                        WA
-                      </a>
-                    )}
-                  </div>
-                ))
-              )}
-            </Seccion>
           </div>
         </>
       )}
@@ -314,7 +285,11 @@ function FilaReserva({ reserva: r, mostrarProp }) {
     : null
 
   return (
-    <div style={s.filaReserva}>
+    <Link 
+      to={`/admin?seccion=reservas&reserva_id=${r.id}`} 
+      style={s.filaReservaLink}
+      className="fila-clickeable"
+    >
       <div style={s.filaReservaLeft}>
         <div style={s.nombre}>
           {r.clientes?.nombre} {r.clientes?.apellido}
@@ -328,7 +303,7 @@ function FilaReserva({ reserva: r, mostrarProp }) {
           {r.precio_total ? ` · $${Number(r.precio_total).toLocaleString('es-AR')}` : ''}
         </div>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }} onClick={e => e.stopPropagation()}>
         <span style={{
           ...s.estadoBadge,
           background: ESTADO_STYLE[r.estado]?.bg ?? '#f0f0f0',
@@ -337,10 +312,10 @@ function FilaReserva({ reserva: r, mostrarProp }) {
           {r.estado}
         </span>
         {waLink && (
-          <a href={waLink} target="_blank" rel="noreferrer" style={s.btnWA}>WA</a>
+          <a href={waLink} target="_blank" rel="noreferrer" style={s.btnWA} onClick={e => e.stopPropagation()}>WA</a>
         )}
       </div>
-    </div>
+    </Link>
   )
 }
 
@@ -397,12 +372,22 @@ const s = {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
     padding: '10px 18px', borderBottom: '1px solid #f8f8f8',
   },
+  filaReservaLink: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    padding: '10px 18px', borderBottom: '1px solid #f8f8f8',
+    textDecoration: 'none', color: 'inherit',
+  },
   filaReservaLeft: { display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 },
 
   // Fila solicitud
   filaSolicitud: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
     padding: '10px 18px', borderBottom: '1px solid #f8f8f8', gap: 12,
+  },
+  filaSolicitudLink: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    padding: '10px 18px', borderBottom: '1px solid #f8f8f8', gap: 12,
+    textDecoration: 'none', color: 'inherit',
   },
   filaSolicitudLeft: { display: 'flex', flexDirection: 'column', gap: 2, flex: 1 },
 

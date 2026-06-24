@@ -65,7 +65,7 @@ async function upsertIcalReservas(supabase, eventos, propiedadId, canal) {
       checkin,
       checkout,
       canal_origen: canal,
-      estado: esCerrada ? 'cerrada' : 'confirmada',
+      estado: esCerrada ? 'confirmada' : 'pendiente',
     }
 
     const { data: overlaps, error } = await supabase
@@ -151,14 +151,12 @@ function useIsMobile(breakpoint = 600) {
 }
 
 const ESTADO_LABEL = {
-  señada:     { label: 'Señada',     bg: '#FEF3C7', color: '#92400E' },
   pendiente:  { label: 'Pendiente',  bg: '#F3E8FF', color: '#6B21A8' },
   confirmada: { label: 'Confirmada', bg: '#D1FAE5', color: '#065F46' },
-  activa:     { label: 'Activa',     bg: '#DBEAFE', color: '#1E40AF' },
   finalizada: { label: 'Finalizada', bg: '#F3F4F6', color: '#374151' },
-  cerrada:    { label: 'Cerrada',    bg: '#E5E7EB', color: '#4B5563' },
-  cancelada:  { label: 'Cancelada',  bg: '#FEE2E2', color: '#991B1B' },
 }
+
+const ESTADOS_EDITABLES = ['pendiente', 'confirmada', 'finalizada']
 
 // ─── Utilidades de fecha (sin timezone issues) ─────────────────────────────────
 // IMPORTANTE: nunca usar new Date('YYYY-MM-DD') — lo parsea como UTC y da un día menos en Argentina
@@ -194,6 +192,14 @@ function diffNoches(desde, hasta) {
   return Math.max(0, Math.round((b - a) / 86400000))
 }
 
+function estadoVisualReserva(r) {
+  if (!r) return 'pendiente'
+  if (r.checkout && r.checkout < hoySrt()) return 'finalizada'
+  if (r.estado === 'señada' || r.estado === 'activa') return 'confirmada'
+  if (r.estado === 'cancelada' || r.estado === 'cerrada') return 'pendiente'
+  return r.estado || 'pendiente'
+}
+
 // ─── Componente ────────────────────────────────────────────────────────────────
 export default function Calendario() {
   const device = useDeviceType()
@@ -209,6 +215,7 @@ export default function Calendario() {
 
   const [propiedades, setPropiedades] = useState([])
   const [reservas,    setReservas]    = useState([])
+  const [bloqueos,    setBloqueos]    = useState([])  // noches cerradas
   const [filtro,      setFiltro]      = useState('todas')
   const [detalle,     setDetalle]     = useState(null)
   const [loading,     setLoading]     = useState(true)
@@ -219,6 +226,8 @@ export default function Calendario() {
   const [icalDraft,   setIcalDraft]   = useState(null)
   const [diaSeleccionado, setDiaSeleccionado] = useState(null)
   const [lastSyncAt,  setLastSyncAt]  = useState(null)
+  const [modalBloqueo, setModalBloqueo] = useState(false)
+  const [bloqueoSeleccionado, setBloqueoSeleccionado] = useState(null) // bloqueo a abrir
 
   const [vista, setVista] = useState('grilla') // 'grilla' | 'timeline'
 
@@ -285,7 +294,7 @@ export default function Calendario() {
     if (selectedPropId) {
       query.set('propiedad_id', selectedPropId)
     }
-    query.set('estado', 'pendiente') // Reserva temporal/pendiente
+    query.set('estado', 'confirmada')
     navigate(`/nueva?${query.toString()}`)
   }
 
@@ -321,7 +330,7 @@ export default function Calendario() {
       const desde = toStr(year, month + 1, 1)
       const hasta = toStr(year, month + 1, ultimoDiaMes(year, month))
 
-      const [resProps, resRes] = await Promise.all([
+      const [resProps, resRes, resBloqueos] = await Promise.all([
         supabase
           .from('propiedades')
           .select('id, nombre, activa')
@@ -338,14 +347,43 @@ export default function Calendario() {
           .lte('checkin', hasta)
           .gt('checkout', desde)
           .neq('estado', 'cancelada')
-          .order('checkin')
+          .order('checkin'),
+        supabase
+          .from('bloqueos')
+          .select('id, propiedad_id, fecha_inicio, fecha_fin, motivo')
+          .lte('fecha_inicio', hasta)
+          .gte('fecha_fin', desde)
       ])
 
       if (resProps.error) throw resProps.error
       if (resRes.error)   throw resRes.error
+      // bloqueos table may not exist yet; ignore error gracefully
+      setBloqueos(resBloqueos.data ?? [])
+
+      const reservasData = resRes.data ?? []
+      const hoy = hoySrt()
+      const vencidas = reservasData.filter(
+        (r) => r.estado !== 'finalizada' && r.checkout < hoy
+      )
+
+      if (vencidas.length > 0) {
+        const idsVencidas = vencidas.map((r) => r.id)
+        const { error: finalizaError } = await supabase
+          .from('reservas')
+          .update({ estado: 'finalizada' })
+          .in('id', idsVencidas)
+
+        if (!finalizaError) {
+          const idsSet = new Set(idsVencidas)
+          setReservas(reservasData.map((r) => (idsSet.has(r.id) ? { ...r, estado: 'finalizada' } : r)))
+        } else {
+          setReservas(reservasData)
+        }
+      } else {
+        setReservas(reservasData)
+      }
 
       setPropiedades(resProps.data ?? [])
-      setReservas(resRes.data ?? [])
     } catch (e) {
       setError('Error cargando datos: ' + e.message)
     } finally {
@@ -428,6 +466,43 @@ export default function Calendario() {
         const indexB = propiedades.findIndex((p) => p.id === b.propiedad_id)
         return indexA - indexB
       })
+  }
+
+  // Bloqueos que cubren un día y propiedad dados
+  function bloqueosDelDia(ds, propId = null) {
+    return bloqueos.filter(b => {
+      if (propId && b.propiedad_id !== propId) return false
+      if (!propId && filtro !== 'todas' && b.propiedad_id !== filtro) return false
+      return b.fecha_inicio <= ds && b.fecha_fin > ds
+    })
+  }
+
+  async function handleCerrarNoches() {
+    setModalBloqueo(true)
+  }
+
+  async function guardarBloqueo({ propiedadId, motivo }) {
+    if (!rangoInicio || !rangoFin) return
+    const { error } = await supabase.from('bloqueos').insert({
+      propiedad_id: propiedadId,
+      fecha_inicio: rangoInicio,
+      fecha_fin:    rangoFin,
+      motivo:       motivo || null,
+    })
+    if (!error) {
+      await cargar()
+      clearRango()
+      setModalBloqueo(false)
+    }
+    return error
+  }
+
+  async function abrirBloqueo(bloqueoId) {
+    const { error } = await supabase.from('bloqueos').delete().eq('id', bloqueoId)
+    if (!error) {
+      await cargar()
+      setBloqueoSeleccionado(null)
+    }
   }
 
   function navMes(dir) {
@@ -587,10 +662,10 @@ export default function Calendario() {
 
   // ── Render ─────────────────────────────────────────────────────────────────────
   return (
-    <div style={{ ...s.page, padding: isMobile ? '12px 8px' : '24px 16px' }}>
+    <div style={{ ...s.page, padding: isMobile ? '8px 8px 60px' : '24px 16px' }}>
 
       {/* Barra superior */}
-      <div style={{ ...s.topBar, flexWrap: 'wrap' }}>
+      <div style={{ ...s.topBar, flexWrap: 'wrap', gap: isMobile ? 8 : 12 }}>
         <div style={s.navGroup}>
           <button style={s.navBtn} onClick={() => navMes(-1)} aria-label="Mes anterior">‹</button>
           <span style={{ ...s.monthTitle, fontSize: isMobile ? 16 : 20, minWidth: isMobile ? 'auto' : 210 }}>
@@ -794,11 +869,11 @@ export default function Calendario() {
                     ...s.cell,
                     minHeight: isMobile ? 52 : isTablet ? 70 : 90,
                     padding: isMobile ? '4px 3px' : isTablet ? '4px 6px' : '6px 8px',
-                    background: bgSelection || (actual ? '#ffffff' : '#f8f8f8'),
+                    background: bgSelection || (esHoy ? '#f0faf4' : actual ? '#ffffff' : '#f8f8f8'),
                     cursor: 'pointer',
                     borderRadius: borderRadiusSelection,
                     transition: 'background-color 0.15s ease, border-radius 0.15s ease',
-                    border: isSingleSelection || isStart || isEnd ? '1px solid #1a3c25' : undefined,
+                    border: esHoy && !bgSelection ? '2px solid #2d5a3d' : (isSingleSelection || isStart || isEnd ? '1px solid #1a3c25' : undefined),
                     boxSizing: 'border-box',
                   }}
                 >
@@ -814,6 +889,36 @@ export default function Calendario() {
                   }}>
                     {dia}
                   </div>
+
+                  {/* Indicadores de bloqueo (solo mes actual) */}
+                  {(() => {
+                    const bsDelDia = actual ? bloqueosDelDia(ds) : []
+                    if (bsDelDia.length === 0) return null
+                    return (
+                      <div
+                        onClick={e => {
+                          e.stopPropagation()
+                          setBloqueoSeleccionado(bsDelDia[0])
+                        }}
+                        title={bsDelDia[0].motivo || 'Cerrado'}
+                        style={{
+                          fontSize: isMobile ? 8 : 10,
+                          color: '#6B4C9E',
+                          fontWeight: 600,
+                          background: '#F3EEFF',
+                          borderRadius: 4,
+                          padding: isMobile ? '1px 3px' : '1px 5px',
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          maxWidth: '100%',
+                        }}
+                      >
+                        🔒 {isMobile ? '' : (bsDelDia[0].motivo || 'Cerrado')}
+                      </div>
+                    )
+                  })()}
 
                   {/* En mobile: solo puntos de color. En tablet/desktop: barras con texto */}
                   {isMobile ? (
@@ -958,6 +1063,14 @@ export default function Calendario() {
                 ➕ Nueva Reserva
               </button>
             )}
+            {rangoFin && (filtro !== 'todas' || rangoPropId) && (
+              <button
+                style={{ ...s.btnModificar, background: '#6B4C9E' }}
+                onClick={handleCerrarNoches}
+              >
+                🔒 Cerrar noches
+              </button>
+            )}
             {rangoFin && reservasSolapadas.length > 0 && (
               <button style={s.btnModificar} onClick={handleVerModificarReservas}>
                 ✏️ {reservasSolapadas.length === 1 ? 'Modificar Reserva' : `Ver Reservas (${reservasSolapadas.length})`}
@@ -968,6 +1081,28 @@ export default function Calendario() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* Modal bloqueo */}
+      {modalBloqueo && (
+        <ModalBloqueo
+          propiedades={propiedades}
+          propFiltro={rangoPropId || (filtro !== 'todas' ? filtro : null)}
+          rangoInicio={rangoInicio}
+          rangoFin={rangoFin}
+          onGuardar={guardarBloqueo}
+          onClose={() => setModalBloqueo(false)}
+        />
+      )}
+
+      {/* Modal abrir bloqueo */}
+      {bloqueoSeleccionado && (
+        <ModalAbrirBloqueo
+          bloqueo={bloqueoSeleccionado}
+          propiedades={propiedades}
+          onAbrir={() => abrirBloqueo(bloqueoSeleccionado.id)}
+          onClose={() => setBloqueoSeleccionado(null)}
+        />
       )}
     </div>
   )
@@ -1204,6 +1339,22 @@ function TimelineView({
   const device = useDeviceType()
   const isMobile = device === 'mobile'
   const totalDias = dias.length
+  const scrollRef = useRef(null)
+  const hoyDs = hoySrt()
+
+  // Scroll to today on mount
+  useEffect(() => {
+    if (!scrollRef.current) return
+    const hoyIdx = dias.findIndex(d => d.ds === hoyDs)
+    if (hoyIdx === -1) return
+    // Each column is 44px wide; first column (sticky) is 130px
+    const colWidth = 44
+    const stickyWidth = 130
+    const todayOffset = stickyWidth + hoyIdx * colWidth
+    const containerWidth = scrollRef.current.clientWidth
+    const scrollTo = todayOffset - containerWidth / 2 + colWidth / 2
+    scrollRef.current.scrollLeft = Math.max(0, scrollTo)
+  }, [dias, hoyDs])
 
   // Filtrar propiedades a mostrar
   const propsVisibles = propiedades.filter(p => filtro === 'todas' || p.id === filtro)
@@ -1218,7 +1369,7 @@ function TimelineView({
       marginBottom: 16,
     }}>
       {/* Contenedor scrolleable */}
-      <div style={{ overflowX: 'auto', width: '100%' }}>
+      <div ref={scrollRef} style={{ overflowX: 'auto', width: '100%' }}>
         <div style={{
           display: 'grid',
           gridTemplateColumns: `130px repeat(${totalDias}, 44px)`,
@@ -1247,14 +1398,15 @@ function TimelineView({
           </div>
           {dias.map(day => {
             const esFinde = day.dow === 0 || day.dow === 6
+            const esHoyTl = day.ds === hoyDs
             return (
               <div
                 key={day.d}
                 style={{
-                  background: esFinde ? '#ececec' : '#f5f5f5',
+                  background: esHoyTl ? '#e8f5ec' : esFinde ? '#ececec' : '#f5f5f5',
                   padding: '8px 0',
                   textAlign: 'center',
-                  fontWeight: 600,
+                  fontWeight: esHoyTl ? 700 : 600,
                   fontSize: 10,
                   color: '#666',
                   display: 'flex',
@@ -1262,10 +1414,13 @@ function TimelineView({
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: 2,
+                  borderLeft: esHoyTl ? '2px solid #2d5a3d' : undefined,
+                  borderRight: esHoyTl ? '2px solid #2d5a3d' : undefined,
+                  borderTop: esHoyTl ? '2px solid #2d5a3d' : undefined,
                 }}
               >
-                <span style={{ fontSize: 12, color: '#1a1a1a' }}>{day.d}</span>
-                <span style={{ fontSize: 9, textTransform: 'uppercase', opacity: 0.7 }}>
+                <span style={{ fontSize: 12, color: esHoyTl ? '#2d5a3d' : '#1a1a1a', fontWeight: esHoyTl ? 800 : 600 }}>{day.d}</span>
+                <span style={{ fontSize: 9, textTransform: 'uppercase', opacity: 0.7, color: esHoyTl ? '#2d5a3d' : undefined }}>
                   {DIAS_CORTO[day.dow]}
                 </span>
               </div>
@@ -1341,6 +1496,7 @@ function TimelineView({
                     bgCell = '#E8F5EC'
                   }
 
+                  const esHoyCell = day.ds === hoyDs
                   return (
                     <div
                       key={day.d}
@@ -1348,7 +1504,7 @@ function TimelineView({
                       style={{
                         gridColumn: dIdx + 2,
                         gridRow: rowGridIndex,
-                        background: bgCell,
+                        background: (isStart || isEnd || isSingleSelection) ? '#2d5a3d' : isSelected ? '#E8F5EC' : esHoyCell ? '#f0faf4' : bgCell,
                         cursor: 'pointer',
                         borderRadius: borderRadiusSelection,
                         display: 'flex',
@@ -1358,6 +1514,8 @@ function TimelineView({
                         boxSizing: 'border-box',
                         position: 'relative',
                         borderBottom: '1px solid #e8e8e8',
+                        borderLeft: esHoyCell ? '2px solid #2d5a3d' : undefined,
+                        borderRight: esHoyCell ? '2px solid #2d5a3d' : undefined,
                       }}
                     />
                   )
@@ -1446,29 +1604,17 @@ function ResumenMes({ reservas, filtro, propiedades }) {
 
   if (filtradas.length === 0) return null
 
-  const totalNoches   = filtradas.reduce((acc, r) => acc + (r.noches ?? 0), 0)
-  const totalIngresos = filtradas.reduce((acc, r) => acc + (r.precio_total ?? 0), 0)
-  const pendientes    = filtradas.filter(r => r.estado === 'señada' || r.estado === 'pendiente').length
+  const pendientes = filtradas.filter(r => r.estado === 'pendiente').length
 
   return (
     <div style={s.resumen}>
       <div style={s.resumenItem}>
-        <span style={s.resumenLabel}>Reservas</span>
+        <span style={s.resumenLabel}>Reservas del mes</span>
         <span style={s.resumenValor}>{filtradas.length}</span>
       </div>
-      <div style={s.resumenItem}>
-        <span style={s.resumenLabel}>Noches</span>
-        <span style={s.resumenValor}>{totalNoches}</span>
-      </div>
-      {totalIngresos > 0 && (
-        <div style={s.resumenItem}>
-          <span style={s.resumenLabel}>Ingresos</span>
-          <span style={s.resumenValor}>${totalIngresos.toLocaleString('es-AR')}</span>
-        </div>
-      )}
       {pendientes > 0 && (
         <div style={s.resumenItem}>
-          <span style={s.resumenLabel}>Pendientes de pago</span>
+          <span style={s.resumenLabel}>Pendientes de confirmar</span>
           <span style={{ ...s.resumenValor, color: '#92400E' }}>{pendientes}</span>
         </div>
       )}
@@ -1492,7 +1638,8 @@ function ModalDetalle({ reserva: r, color, onClose, onActualizar }) {
     notas_internas: r.notas_internas ?? '',
   })
 
-  const estadoInfo = ESTADO_LABEL[r.estado] ?? { label: r.estado, bg: '#f0f0f0', color: '#333' }
+  const estadoVisual = estadoVisualReserva(r)
+  const estadoInfo = ESTADO_LABEL[estadoVisual] ?? { label: r.estado, bg: '#f0f0f0', color: '#333' }
   const waLink = r.clientes?.whatsapp
     ? `https://wa.me/${r.clientes.whatsapp.replace(/\D/g, '')}`
     : null
@@ -1703,29 +1850,35 @@ function ModalDetalle({ reserva: r, color, onClose, onActualizar }) {
             </div>
           )}
 
-          {/* Cambiar estado (siempre visible) */}
-          <div style={{ ...s.estadosSection, marginTop: 16 }}>
-            <div style={s.estadosLabel}>Cambiar estado</div>
-            <div style={s.estadosBtns}>
-              {Object.entries(ESTADO_LABEL).map(([key, val]) => (
-                <button
-                  key={key}
-                  disabled={r.estado === key || cambiandoEstado || guardando}
-                  onClick={() => cambiarEstado(key)}
-                  style={{
-                    ...s.estadoBtn,
-                    background: val.bg,
-                    color:      val.color,
-                    opacity:    r.estado === key ? 1 : 0.7,
-                    fontWeight: r.estado === key ? 600 : 400,
-                    cursor:     r.estado === key ? 'default' : 'pointer',
-                  }}
-                >
-                  {val.label}
-                </button>
-              ))}
+          {/* Cambiar estado: solo visible cuando se está editando */}
+          {editando && (
+            <div style={{ ...s.estadosSection, marginTop: 16 }}>
+              <div style={s.estadosLabel}>Cambiar estado</div>
+              <div style={s.estadosBtns}>
+                {ESTADOS_EDITABLES.map((key) => {
+                  const val = ESTADO_LABEL[key]
+                  const isCurrent = r.estado === key
+                  return (
+                    <button
+                      key={key}
+                      disabled={isCurrent || cambiandoEstado || guardando}
+                      onClick={() => cambiarEstado(key)}
+                      style={{
+                        ...s.estadoBtn,
+                        background: val.bg,
+                        color:      val.color,
+                        opacity:    isCurrent ? 1 : 0.7,
+                        fontWeight: isCurrent ? 600 : 400,
+                        cursor:     isCurrent ? 'default' : 'pointer',
+                      }}
+                    >
+                      {val.label}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Footer */}
@@ -1851,7 +2004,7 @@ function ModalDiaReservas({ dia, onClose, onVerDetalle, propColor }) {
                 </div>
               </div>
               <div style={{ fontSize: 12, color: '#666' }}>
-                {ESTADO_LABEL[r.estado]?.label || r.estado}
+                {ESTADO_LABEL[estadoVisualReserva(r)]?.label || r.estado}
               </div>
             </button>
           ))}

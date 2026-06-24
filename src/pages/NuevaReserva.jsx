@@ -7,11 +7,8 @@ const CANALES = ['whatsapp','mail','telefono','booking','airbnb','directo']
 
 const ESTADOS = [
   { value: 'pendiente',  label: 'Pendiente',  bg: '#F3E8FF', color: '#6B21A8' },
-  { value: 'señada',     label: 'Seña (30%)', bg: '#FEF3C7', color: '#92400E' },
   { value: 'confirmada', label: 'Confirmada', bg: '#D1FAE5', color: '#065F46' },
-  { value: 'activa',     label: 'Activa',     bg: '#DBEAFE', color: '#1E40AF' },
   { value: 'finalizada', label: 'Finalizada', bg: '#F3F4F6', color: '#374151' },
-  { value: 'cancelada',  label: 'Cancelada',  bg: '#FEE2E2', color: '#991B1B' },
 ]
 
 const PASOS = ['Propiedad y fechas', 'Cliente', 'Confirmar reserva']
@@ -45,7 +42,7 @@ export default function NuevaReserva({ onExito }) {
   const initialPropId = searchParams.get('propiedad_id') || ''
   const initialCheckin = searchParams.get('checkin') || ''
   const initialCheckout = searchParams.get('checkout') || ''
-  const initialEstado = searchParams.get('estado') || 'señada'
+  const initialEstado = searchParams.get('estado') || 'pendiente'
 
   const [paso, setPaso] = useState(0)
 
@@ -286,7 +283,7 @@ export default function NuevaReserva({ onExito }) {
     setClienteForm({ nombre:'', apellido:'', dni:'', email:'', whatsapp:'', domicilio:'', ciudad:'' })
     setModoCliente('buscar')
     setPrecioTotal('')
-    setEstado('señada')
+    setEstado('pendiente')
     setNotasInt('')
   }
 
