@@ -125,39 +125,37 @@ async function upsertIcalReservas(supabase, eventos, propiedadId, canal) {
       continue
     }
 
-    // Si hay un overlap con una reserva que NO es del mismo canal (ej: reserva manual),
-    // no tocar. Solo saltear si hay conflicto real con otra reserva existente
-    // que no venga del mismo canal de importación.
+    // Un conflicto real (externo) es cualquier reserva que se solape y:
+    // - Sea de otro canal (ej. manual/Airbnb vs Booking)
+    // - O ya tenga un cliente asignado
+    // - O ya esté confirmada o finalizada
     const conflictoExterno = (overlaps ?? []).filter(
-      (row) => row.canal_origen !== canal || !['cerrada', 'pendiente'].includes(row.estado)
+      (row) =>
+        row.canal_origen !== canal ||
+        row.cliente_id ||
+        !['cerrada', 'pendiente'].includes(row.estado)
     )
+
     if (conflictoExterno.length > 0) {
       stats.conflicts.push({ checkin, checkout, estado: estadoNuevo })
       continue
     }
 
-    // Si hay overlaps sólo del mismo canal (otra importación), los reemplazamos.
-    const mismoCanalMatch = (overlaps ?? []).find(
-      (row) => row.canal_origen === canal && row.checkin === checkin && row.checkout === checkout
+    // Si hay overlaps sólo del mismo canal que son bloqueos/reservas no procesadas,
+    // significa que las fechas se desplazaron o cambiaron en Booking.
+    // Las eliminamos primero para evitar violar la restricción de exclusión Postgres "reservas_no_overlap"
+    const solapamientosMismoCanal = (overlaps ?? []).filter(
+      (row) =>
+        row.canal_origen === canal &&
+        ['cerrada', 'pendiente'].includes(row.estado) &&
+        !row.cliente_id
     )
-    if (mismoCanalMatch?.id) {
-      // Si la reserva ya tiene cliente asignado, o está confirmada/finalizada, no la tocamos.
-      // Si está en estado 'cerrada' pero el import ahora dice 'cerrada', también la ignoramos.
-      // Pero si está en 'cerrada' (de un sync anterior incorrecto) y el nuevo import dice 'pendiente'
-      // (porque dura < 25 noches) y no tiene cliente, la actualizamos para corregir su estado.
-      if (
-        mismoCanalMatch.cliente_id ||
-        mismoCanalMatch.estado === 'confirmada' ||
-        mismoCanalMatch.estado === 'finalizada' ||
-        (mismoCanalMatch.estado === 'cerrada' && estadoNuevo === 'cerrada')
-      ) {
-        stats.skipped += 1
-        continue
-      }
-      const { error: updateError } = await supabase.from('reservas').update(payload).eq('id', mismoCanalMatch.id)
-      if (updateError) throw updateError
-      stats.updated += 1
-      continue
+
+    if (solapamientosMismoCanal.length > 0) {
+      const idsBorrar = solapamientosMismoCanal.map((row) => row.id)
+      const { error: deleteError } = await supabase.from('reservas').delete().in('id', idsBorrar)
+      if (deleteError) throw deleteError
+      stats.deduped += idsBorrar.length
     }
 
     // Sin conflictos: insertar
