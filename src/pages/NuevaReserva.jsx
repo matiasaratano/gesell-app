@@ -357,45 +357,6 @@ export default function NuevaReserva({ onExito }) {
             <div style={s.nochesBadge}>{noches} {noches === 1 ? 'noche' : 'noches'}</div>
           )}
 
-          <div style={s.row2}>
-            <Campo label="Adultos">
-              <input
-                type="number" min={1} max={20} style={s.input}
-                value={adultos} onChange={e => setAdultos(Number(e.target.value))}
-              />
-            </Campo>
-            <Campo label="Menores">
-              <input
-                type="number" min={0} max={20} style={s.input}
-                value={menores} onChange={e => setMenores(Number(e.target.value))}
-              />
-            </Campo>
-          </div>
-
-          <div style={s.row2}>
-            <Campo label="Mascotas">
-              <label style={s.checkLabel}>
-                <input
-                  type="checkbox" checked={mascotas}
-                  onChange={e => setMascotas(e.target.checked)}
-                  style={{ marginRight: 8 }}
-                />
-                Viaja con mascota
-                {propiedad && !propiedad.acepta_mascotas && mascotas && (
-                  <span style={s.warnText}> ⚠ Esta propiedad no acepta mascotas</span>
-                )}
-              </label>
-            </Campo>
-            <Campo label="Canal de origen">
-              <select
-                style={s.input} value={canal}
-                onChange={e => setCanal(e.target.value)}
-              >
-                {CANALES.map(c => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
-              </select>
-            </Campo>
-          </div>
-
           {dispError && <MensajeError texto={dispError} />}
 
           <div style={s.footerBtns}>
@@ -549,9 +510,6 @@ export default function NuevaReserva({ onExito }) {
             <FilaResumen label="Check-in"   value={formatFecha(checkin)} />
             <FilaResumen label="Check-out"  value={formatFecha(checkout)} />
             <FilaResumen label="Noches"     value={noches} />
-            <FilaResumen label="Personas"   value={`${adultos} adultos${menores ? `, ${menores} menores` : ''}`} />
-            {mascotas && <FilaResumen label="Mascotas" value="Sí" />}
-            <FilaResumen label="Canal"      value={canal} />
             <FilaResumen label="Cliente"    value={clienteLabel} />
             <FilaResumen
               label="Estado"

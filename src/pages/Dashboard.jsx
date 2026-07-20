@@ -76,11 +76,12 @@ export default function Dashboard() {
       const hoy = hoyStr()
 
       // Automatización: Finalizar reservas cuya fecha de checkout ya pasó
+      // (excluye 'cerrada' para no tocar bloqueos de plataforma)
       await supabase
         .from('reservas')
         .update({ estado: 'finalizada' })
         .lt('checkout', hoy)
-        .not('estado', 'in', '("finalizada","cancelada")')
+        .not('estado', 'in', '("finalizada","cancelada","cerrada")')
 
       const [rProps, rAlojadas, rIngresan, rSalen, rSolicitudes] = await Promise.all([
 
@@ -109,12 +110,12 @@ export default function Dashboard() {
           .not('estado', 'in', '("cancelada","cerrada")')
           .order('propiedades(nombre)'),
 
-        // Últimas solicitudes (reservas en estado señada/pendiente recientes)
+        // Últimas solicitudes (pendientes o reservas de canales sin cliente)
         supabase.from('reservas')
           .select('id, checkin, checkout, estado, canal_origen, created_at, clientes(nombre, apellido), propiedades(nombre)')
           .in('estado', ['señada', 'pendiente'])
           .order('created_at', { ascending: false })
-          .limit(6),
+          .limit(10),
       ])
 
       setPropiedades(rProps.data ?? [])
@@ -205,7 +206,10 @@ export default function Dashboard() {
                       <div style={s.filaSolicitudLeft}>
                         <div style={s.nombre}>
                           {CANAL_ICON[r.canal_origen] || '📋'}{' '}
-                          {r.clientes?.nombre} {r.clientes?.apellido}
+                          {r.clientes?.nombre
+                            ? `${r.clientes.nombre} ${r.clientes.apellido || ''}`
+                            : <span style={{ color: '#D97706', fontStyle: 'italic' }}>Sin cliente — asignar</span>
+                          }
                         </div>
                         <div style={s.sub}>
                           {r.propiedades?.nombre} · {fmtFecha(r.checkin)} → {fmtFecha(r.checkout)}

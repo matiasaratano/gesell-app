@@ -121,6 +121,14 @@ function CRUDPropiedades() {
     cargar()
   }
 
+  async function eliminarPropiedad(prop) {
+    if (!confirm(`¿Eliminar permanentemente "${prop.nombre}"? Esta acción no se puede deshacer.`)) return
+    const { error } = await supabase.from('propiedades').delete().eq('id', prop.id)
+    if (error) { showToast('No se puede eliminar: ' + error.message); return }
+    showToast('Propiedad eliminada')
+    cargar()
+  }
+
   if (editando !== null) return (
     <div style={s.card}>
       <div style={s.cardHeader}>
@@ -212,6 +220,9 @@ function CRUDPropiedades() {
                 <button style={s.btnSm} onClick={() => toggleActiva(p)}>
                   {p.activa ? 'Desactivar' : 'Activar'}
                 </button>
+                <button style={{ ...s.btnSm, color: '#991B1B', borderColor: '#fca5a5' }} onClick={() => eliminarPropiedad(p)}>
+                  Eliminar
+                </button>
               </div>
             </div>
           ))}
@@ -229,6 +240,17 @@ function CRUDReservas() {
   const [clientes,     setClientes]     = useState([])
   const [loading,      setLoading]      = useState(true)
   const [editando,     setEditando]     = useState(null)
+  const [busquedaCli,  setBusquedaCli]  = useState('')
+  const [mostrarDropdownCli, setMostrarDropdownCli] = useState(false)
+
+  useEffect(() => {
+    if (editando && clientes.length > 0) {
+      const c = clientes.find(x => x.id === editando.cliente_id)
+      setBusquedaCli(c ? `${c.nombre} ${c.apellido || ''}` : '')
+    } else {
+      setBusquedaCli('')
+    }
+  }, [editando, clientes])
   const [detalle,      setDetalle]      = useState(null)
   const [guardando,    setGuardando]    = useState(false)
   const [toast,        setToast]        = useState('')
@@ -245,11 +267,12 @@ function CRUDReservas() {
     const hoy = new Date().toISOString().split('T')[0]
 
     // Automatización: Finalizar reservas cuya fecha de checkout ya pasó
+    // (excluye 'cerrada' para no tocar bloqueos de plataforma)
     await supabase
       .from('reservas')
       .update({ estado: 'finalizada' })
       .lt('checkout', hoy)
-      .not('estado', 'in', '("finalizada","cancelada")')
+      .not('estado', 'in', '("finalizada","cancelada","cerrada")')
 
     const [resRes, resProp, resClientes] = await Promise.all([
       supabase
@@ -363,16 +386,65 @@ function CRUDReservas() {
       </div>
 
       <div style={s.grid2}>
-        <Campo label="Cliente *">
-          <select style={s.input} value={editando.cliente_id ?? ''}
-            onChange={e => setEditando(p => ({ ...p, cliente_id: e.target.value }))}>
-            <option value="">— Elegí un cliente —</option>
-            {clientes.map(c => (
-              <option key={c.id} value={c.id}>
-                {c.nombre} {c.apellido} {c.dni ? `· DNI ${c.dni}` : ''}
-              </option>
-            ))}
-          </select>
+        <Campo label="Cliente *" style={{ position: 'relative' }}>
+          <input
+            type="text"
+            style={s.input}
+            placeholder="Buscar por nombre o DNI..."
+            value={busquedaCli}
+            onChange={e => {
+              setBusquedaCli(e.target.value)
+              setMostrarDropdownCli(true)
+              if (!e.target.value.trim()) {
+                setEditando(p => ({ ...p, cliente_id: '' }))
+              }
+            }}
+            onFocus={() => setMostrarDropdownCli(true)}
+          />
+          {mostrarDropdownCli && (
+            <div style={{
+              position: 'absolute', top: '100%', left: 0, right: 0,
+              background: '#fff', border: '1px solid #ddd', borderRadius: 8,
+              maxHeight: 180, overflowY: 'auto', zIndex: 100,
+              boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+            }}>
+              {clientes.filter(c => {
+                const q = busquedaCli.toLowerCase()
+                return (
+                  (c.nombre ?? '').toLowerCase().includes(q) ||
+                  (c.apellido ?? '').toLowerCase().includes(q) ||
+                  (c.dni ?? '').toLowerCase().includes(q)
+                )
+              }).length === 0 ? (
+                <div style={{ padding: '8px 12px', fontSize: 13, color: '#999' }}>No se encontraron clientes</div>
+              ) : (
+                clientes.filter(c => {
+                  const q = busquedaCli.toLowerCase()
+                  return (
+                    (c.nombre ?? '').toLowerCase().includes(q) ||
+                    (c.apellido ?? '').toLowerCase().includes(q) ||
+                    (c.dni ?? '').toLowerCase().includes(q)
+                  )
+                }).slice(0, 10).map(c => (
+                  <div
+                    key={c.id}
+                    onClick={() => {
+                      setEditando(p => ({ ...p, cliente_id: c.id }))
+                      setBusquedaCli(`${c.nombre} ${c.apellido || ''}`)
+                      setMostrarDropdownCli(false)
+                    }}
+                    style={{
+                      padding: '8px 12px', cursor: 'pointer', fontSize: 13,
+                      borderBottom: '1px solid #f5f5f5',
+                      background: editando.cliente_id === c.id ? '#e8f0eb' : '#fff'
+                    }}
+                  >
+                    <strong>{c.nombre} {c.apellido || ''}</strong> {c.dni ? `· DNI ${c.dni}` : ''}
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </Campo>
         <Campo label="Propiedad *">
           <select style={s.input} value={editando.propiedad_id ?? ''}
@@ -659,12 +731,28 @@ function CRUDClientes() {
   const [guardando,setGuardando]= useState(false)
   const [toast,    setToast]    = useState('')
   const [busqueda, setBusqueda] = useState('')
+  const [filtroRepetidor, setFiltroRepetidor] = useState('todos')
+  const [ordenarPor, setOrdenarPor] = useState('nombre')
+  const [historialReservas, setHistorialReservas] = useState([])
 
   // IA parser
   const [fichaTexto, setFichaTexto] = useState('')
   const [parseando, setParseando] = useState(false)
   const [parseStatus, setParseStatus] = useState(null)
   const [parseMsg, setParseMsg] = useState('')
+
+  useEffect(() => {
+    if (editando?.id) {
+      supabase
+        .from('reservas')
+        .select('id, checkin, checkout, estado, propiedades(nombre)')
+        .eq('cliente_id', editando.id)
+        .order('checkin', { ascending: false })
+        .then(({ data }) => setHistorialReservas(data ?? []))
+    } else {
+      setHistorialReservas([])
+    }
+  }, [editando])
 
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(''), 2200) }
 
@@ -704,6 +792,7 @@ function CRUDClientes() {
     const { error } = await supabase.from('clientes').delete().eq('id', id)
     if (error) { showToast('No se puede eliminar: tiene reservas asociadas'); return }
     showToast('Cliente eliminado')
+    setEditando(null)
     cargar(busqueda)
   }
 
@@ -792,14 +881,54 @@ function CRUDClientes() {
         <AdminTextField label="Email" campo="email" placeholder="juan@mail.com" editando={editando} setEditando={setEditando} />
         <AdminTextField label="Ciudad" campo="ciudad" placeholder="Buenos Aires" editando={editando} setEditando={setEditando} />
         <AdminTextField label="Domicilio" campo="domicilio" placeholder="Av. Rivadavia 1234" editando={editando} setEditando={setEditando} />
-        <AdminTextField label="Domicilio" campo="domicilio" placeholder="Av. Rivadavia 1234" editando={editando} setEditando={setEditando} />
         <AdminTextField label="Patente vehículo" campo="vehiculo_patente" placeholder="AA123BB" editando={editando} setEditando={setEditando} />
+        <Campo label="Opciones">
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, cursor: 'pointer', marginTop: 8 }}>
+            <input
+              type="checkbox"
+              checked={!!editando.es_repetidor}
+              onChange={e => setEditando(p => ({ ...p, es_repetidor: e.target.checked }))}
+            />
+            ⭐ Cliente frecuente / Repetidor
+          </label>
+        </Campo>
       </div>
       <Campo label="Notas" style={{ marginTop: 12 }}>
         <textarea style={{ ...s.input, minHeight: 60, resize: 'vertical' }}
           value={editando.notas ?? ''}
           onChange={e => setEditando(p => ({ ...p, notas: e.target.value }))} />
       </Campo>
+
+      {/* Historial de reservas asociadas */}
+      {editando.id && (
+        <div style={{ marginTop: 24, borderTop: '1px solid #eee', paddingTop: 16 }}>
+          <h4 style={{ margin: '0 0 10px 0', fontSize: 13, fontWeight: 600, color: '#444', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            📅 Historial de reservas ({historialReservas.length})
+          </h4>
+          {historialReservas.length === 0 ? (
+            <div style={{ fontSize: 12, color: '#999', italic: true }}>Este cliente no posee reservas registradas.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 160, overflowY: 'auto' }}>
+              {historialReservas.map(r => {
+                const fmtF = (str) => { if(!str) return ''; const [y,m,d] = str.split('-'); return `${d}/${m}/${y}` }
+                return (
+                  <div key={r.id} style={{
+                    display: 'flex', justifyContent: 'space-between', padding: '6px 10px',
+                    background: '#fcfcfc', border: '1px solid #eee', borderRadius: 6, fontSize: 12
+                  }}>
+                    <span>🏠 {r.propiedades?.nombre} · {fmtF(r.checkin)} → {fmtF(r.checkout)}</span>
+                    <span style={{
+                      fontWeight: 600,
+                      color: r.estado === 'confirmada' ? '#065F46' : r.estado === 'finalizada' ? '#374151' : '#6B21A8'
+                    }}>{r.estado.toUpperCase()}</span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       <div style={s.footerBtns}>
         {editando.id && (
           <button style={{ ...s.btnSm, color: '#991B1B' }} onClick={() => eliminar(editando.id)}>
@@ -815,31 +944,68 @@ function CRUDClientes() {
     </div>
   )
 
+  const listaProcesada = lista
+    .filter(c => {
+      if (filtroRepetidor === 'repetidores' && !c.es_repetidor) return false
+      return true
+    })
+    .sort((a, b) => {
+      if (ordenarPor === 'recientes') {
+        return new Date(b.created_at || 0) - new Date(a.created_at || 0)
+      }
+      const nombreA = `${a.nombre || ''} ${a.apellido || ''}`.toLowerCase()
+      const nombreB = `${b.nombre || ''} ${b.apellido || ''}`.toLowerCase()
+      return nombreA.localeCompare(nombreB)
+    })
+
   return (
     <div>
-      <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
-        <input style={{ ...s.input, flex: 1 }} placeholder="Buscar por nombre, apellido o DNI…"
+      {/* Controles de búsqueda y filtros */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input style={{ ...s.input, flex: 1, minWidth: 200 }} placeholder="Buscar por nombre, apellido o DNI…"
           value={busqueda} onChange={e => setBusqueda(e.target.value)} />
+        
+        <select style={{ ...s.input, width: 150 }} value={filtroRepetidor} onChange={e => setFiltroRepetidor(e.target.value)}>
+          <option value="todos">Todos los clientes</option>
+          <option value="repetidores">⭐ Repetidores</option>
+        </select>
+
+        <select style={{ ...s.input, width: 150 }} value={ordenarPor} onChange={e => setOrdenarPor(e.target.value)}>
+          <option value="nombre">Ordenar: A-Z</option>
+          <option value="recientes">Ordenar: Recientes</option>
+        </select>
+
         <button style={s.btnSm} onClick={exportarCSV}>⬇ CSV</button>
         <button style={s.btnPrimario} onClick={() => { setEditando({ ...vacio }); setFichaTexto(''); setParseStatus(null) }}>+ Nuevo</button>
       </div>
+
       {loading ? <Cargando /> : (
         <div style={s.card}>
-          {lista.length === 0 && <div style={s.empty}>No se encontraron clientes.</div>}
-          {lista.map(c => (
+          {listaProcesada.length === 0 && <div style={s.empty}>No se encontraron clientes con estos filtros.</div>}
+          {listaProcesada.map(c => (
             <div key={c.id} style={s.fila}>
               <div style={s.filaInfo}>
-                <span style={s.filaNombre}>{c.nombre} {c.apellido}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={s.filaNombre}>{c.nombre} {c.apellido}</span>
+                  {c.es_repetidor && (
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, background: '#FEF3C7', color: '#92400E',
+                      padding: '2px 8px', borderRadius: 10, display: 'inline-flex', alignItems: 'center'
+                    }}>
+                      ⭐ Repetidor
+                    </span>
+                  )}
+                </div>
                 <span style={s.filaSub}>DNI {c.dni || '—'} · {c.whatsapp || 'sin WhatsApp'} · {c.ciudad || ''}</span>
               </div>
               <div style={s.filaAcciones}>
-                <button style={s.btnSm} onClick={() => setEditando({ ...c })}>Editar</button>
+                <button style={s.btnSm} onClick={() => setEditando({ ...c })}>Editar / Ver ficha</button>
               </div>
             </div>
           ))}
         </div>
       )}
-      <div style={{ padding: '8px 0', fontSize: 12, color: '#888', textAlign: 'right' }}>{lista.length} cliente(s)</div>
+      <div style={{ padding: '8px 0', fontSize: 12, color: '#888', textAlign: 'right' }}>{listaProcesada.length} cliente(s) filtrado(s)</div>
       <Toast msg={toast} />
     </div>
   )

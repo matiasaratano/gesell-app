@@ -50,7 +50,11 @@ async function upsertIcalReservas(supabase, eventos, propiedadId, canal) {
     inserted: 0,
     updated: 0,
     deduped: 0,
+    skipped: 0,
+    insertedReservas: 0,   // pendiente (reservas reales de huéspedes)
+    insertedBloqueadas: 0, // cerrada (fechas bloqueadas por la plataforma)
     conflicts: [],
+    nuevas: [],            // lista de eventos nuevos para el reporte
   }
 
   for (const ev of eventos) {
@@ -59,18 +63,29 @@ async function upsertIcalReservas(supabase, eventos, propiedadId, canal) {
     if (!checkin || !checkout) continue
     checkin = checkin.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')
     checkout = checkout.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')
-    const esCerrada = (ev.summary || '').toUpperCase().includes('CLOSED')
+
+    const summaryRaw = (ev.summary || '').trim()
+    const noches = diffNoches(checkin, checkout)
+
+    // Heurística de duración para Booking/Airbnb:
+    // Si la reserva dura 25 noches o más, asumimos que es un bloqueo de fechas/cierre manual (cerrada).
+    // Si dura menos de 25 noches, asumimos que es una reserva real pendiente de asignación de cliente (pendiente).
+    const esBloqueoMasivo = noches >= 25
+    const estadoNuevo = esBloqueoMasivo ? 'cerrada' : 'pendiente'
+
     const payload = {
       propiedad_id: propiedadId,
       checkin,
       checkout,
       canal_origen: canal,
-      estado: esCerrada ? 'confirmada' : 'pendiente',
+      estado: estadoNuevo,
+      // Guardar el summary original del iCal en notas_internas para trazabilidad
+      notas_internas: summaryRaw || null,
     }
 
     const { data: overlaps, error } = await supabase
       .from('reservas')
-      .select('id, checkin, checkout, estado, canal_origen')
+      .select('id, checkin, checkout, estado, canal_origen, cliente_id')
       .eq('propiedad_id', propiedadId)
       .lt('checkin', checkout)
       .gt('checkout', checkin)
@@ -78,10 +93,12 @@ async function upsertIcalReservas(supabase, eventos, propiedadId, canal) {
 
     if (error) throw error
 
+    // Buscar coincidencia exacta (mismas fechas Y mismo estado)
     const exactMatches = (overlaps ?? []).filter(
-      (row) => row.checkin === checkin && row.checkout === checkout && row.estado === payload.estado
+      (row) => row.checkin === checkin && row.checkout === checkout && row.estado === estadoNuevo
     )
 
+    // Eliminar duplicados exactos si hay más de uno
     if (exactMatches.length > 1) {
       const duplicateIds = exactMatches.slice(1).map((row) => row.id)
       const { error: deleteError } = await supabase.from('reservas').delete().in('id', duplicateIds)
@@ -89,22 +106,70 @@ async function upsertIcalReservas(supabase, eventos, propiedadId, canal) {
       stats.deduped += duplicateIds.length
     }
 
+    // Si ya existe una con esas fechas y ese estado, actualizar y seguir
     const exactMatch = exactMatches[0]
     if (exactMatch?.id) {
+      // Si la reserva en la base de datos ya tiene un cliente asignado,
+      // o si su estado ya fue modificado a confirmada o finalizada, no la tocamos
+      if (
+        exactMatch.cliente_id ||
+        exactMatch.estado === 'confirmada' ||
+        exactMatch.estado === 'finalizada'
+      ) {
+        stats.skipped += 1
+        continue
+      }
       const { error: updateError } = await supabase.from('reservas').update(payload).eq('id', exactMatch.id)
       if (updateError) throw updateError
       stats.updated += 1
       continue
     }
 
-    if ((overlaps ?? []).length > 0) {
-      stats.conflicts.push({ checkin, checkout, estado: payload.estado })
+    // Si hay un overlap con una reserva que NO es del mismo canal (ej: reserva manual),
+    // no tocar. Solo saltear si hay conflicto real con otra reserva existente
+    // que no venga del mismo canal de importación.
+    const conflictoExterno = (overlaps ?? []).filter(
+      (row) => row.canal_origen !== canal || !['cerrada', 'pendiente'].includes(row.estado)
+    )
+    if (conflictoExterno.length > 0) {
+      stats.conflicts.push({ checkin, checkout, estado: estadoNuevo })
       continue
     }
 
+    // Si hay overlaps sólo del mismo canal (otra importación), los reemplazamos.
+    const mismoCanalMatch = (overlaps ?? []).find(
+      (row) => row.canal_origen === canal && row.checkin === checkin && row.checkout === checkout
+    )
+    if (mismoCanalMatch?.id) {
+      // Si la reserva ya tiene cliente asignado, o está confirmada/finalizada, no la tocamos.
+      // Si está en estado 'cerrada' pero el import ahora dice 'cerrada', también la ignoramos.
+      // Pero si está en 'cerrada' (de un sync anterior incorrecto) y el nuevo import dice 'pendiente'
+      // (porque dura < 25 noches) y no tiene cliente, la actualizamos para corregir su estado.
+      if (
+        mismoCanalMatch.cliente_id ||
+        mismoCanalMatch.estado === 'confirmada' ||
+        mismoCanalMatch.estado === 'finalizada' ||
+        (mismoCanalMatch.estado === 'cerrada' && estadoNuevo === 'cerrada')
+      ) {
+        stats.skipped += 1
+        continue
+      }
+      const { error: updateError } = await supabase.from('reservas').update(payload).eq('id', mismoCanalMatch.id)
+      if (updateError) throw updateError
+      stats.updated += 1
+      continue
+    }
+
+    // Sin conflictos: insertar
     const { error: insertError } = await supabase.from('reservas').insert(payload)
     if (insertError) throw insertError
     stats.inserted += 1
+    if (esBloqueoMasivo) {
+      stats.insertedBloqueadas += 1
+    } else {
+      stats.insertedReservas += 1
+      stats.nuevas.push({ checkin, checkout, summary: summaryRaw })
+    }
   }
 
   return stats
@@ -154,6 +219,7 @@ const ESTADO_LABEL = {
   pendiente:  { label: 'Pendiente',  bg: '#F3E8FF', color: '#6B21A8' },
   confirmada: { label: 'Confirmada', bg: '#D1FAE5', color: '#065F46' },
   finalizada: { label: 'Finalizada', bg: '#F3F4F6', color: '#374151' },
+  cerrada:    { label: 'Cerrada',    bg: '#E5E7EB', color: '#4B5563' },
 }
 
 const ESTADOS_EDITABLES = ['pendiente', 'confirmada', 'finalizada']
@@ -222,6 +288,7 @@ export default function Calendario() {
   const [error,       setError]       = useState(null)
   const [syncing,     setSyncing]     = useState('')
   const [syncMsg,     setSyncMsg]     = useState('')
+  const [syncReport,  setSyncReport]  = useState(null) // reporte detallado post-importación
   const [modalIcal,   setModalIcal]   = useState(false)
   const [icalDraft,   setIcalDraft]   = useState(null)
   const [diaSeleccionado, setDiaSeleccionado] = useState(null)
@@ -542,27 +609,39 @@ export default function Calendario() {
 
     setSyncing(canal)
     setSyncMsg('')
+    setSyncReport(null)
     try {
       let total = 0
       let totalInsertadas = 0
       let totalActualizadas = 0
       let totalDepuradas = 0
+      let totalReservas = 0
+      let totalBloqueadas = 0
       const conflictos = []
-      const detalles = []
+      const propDetalles = [] // { nombre, reservas: [], bloqueadas: N, actualizadas: N }
+
       for (const feed of feeds) {
         const text = await fetchIcsText(feed.url)
         const events = parseIcs(text)
+        const nombreProp = propiedades.find((p) => p.id === feed.propiedad_id)?.nombre || '—'
         if (events.length) {
           const resultado = await upsertIcalReservas(supabase, events, feed.propiedad_id, canal)
           total += events.length
           totalInsertadas += resultado.inserted
           totalActualizadas += resultado.updated
           totalDepuradas += resultado.deduped
+          totalReservas += resultado.insertedReservas
+          totalBloqueadas += resultado.insertedBloqueadas
           conflictos.push(...resultado.conflicts)
+          propDetalles.push({
+            nombre: nombreProp,
+            reservasNuevas: resultado.nuevas,        // [{checkin, checkout, summary}]
+            bloqueadasNuevas: resultado.insertedBloqueadas,
+            actualizadas: resultado.updated,
+          })
+        } else {
+          propDetalles.push({ nombre: nombreProp, reservasNuevas: [], bloqueadasNuevas: 0, actualizadas: 0 })
         }
-        const nombreProp =
-          propiedades.find((p) => p.id === feed.propiedad_id)?.nombre || '—'
-        detalles.push(`${nombreProp}: ${events.length} evento(s)`)
       }
       await cargar()
       setLastSyncAt(new Date())
@@ -571,14 +650,15 @@ export default function Calendario() {
           `${canal === 'booking' ? 'Booking' : 'Airbnb'}: el .ics no trae eventos. Si no hay reservas en la plataforma, el archivo suele venir vacío; cuando haya reservas, volvé a sincronizar.`
         )
       } else if (!silentSuccess) {
-        const partes = [
-          `${canal === 'booking' ? 'Booking' : 'Airbnb'}: ${total} evento(s) leídos.`,
-          `${totalInsertadas} alta(s) nuevas`,
-          `${totalActualizadas} actualización(es)`,
-        ]
-        if (totalDepuradas > 0) partes.push(`${totalDepuradas} duplicado(s) limpiado(s)`)
-        if (conflictos.length > 0) partes.push(`${conflictos.length} conflicto(s) omitido(s)`)
-        setSyncMsg(`${partes.join(' · ')}. ${detalles.join(' · ')}`)
+        setSyncReport({
+          canal: canal === 'booking' ? 'Booking' : 'Airbnb',
+          total,
+          totalReservas,
+          totalBloqueadas,
+          totalActualizadas,
+          conflictos,
+          propDetalles,
+        })
       }
     } catch (e) {
       setSyncMsg(e.message || String(e))
@@ -777,6 +857,142 @@ export default function Calendario() {
           </div>
         )
       })()}
+
+      {/* Reporte detallado de importación iCal */}
+      {syncReport && (
+        <div style={{
+          background: '#fff', border: '1px solid #e0e0e0', borderRadius: 12,
+          marginBottom: 16, overflow: 'hidden',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+        }}>
+          {/* Header del reporte */}
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            padding: '12px 16px', background: '#f8f9fa', borderBottom: '1px solid #e8e8e8',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>
+                📥 Resultado importación {syncReport.canal}
+              </span>
+              <span style={{ fontSize: 12, color: '#888' }}>
+                · {syncReport.total} evento(s) procesados
+              </span>
+            </div>
+            <button onClick={() => setSyncReport(null)} style={{
+              border: 'none', background: 'none', cursor: 'pointer',
+              fontSize: 16, color: '#aaa', padding: '0 4px',
+            }}>✕</button>
+          </div>
+
+          {/* Resumen de contadores */}
+          <div style={{
+            display: 'flex', gap: 0, borderBottom: '1px solid #f0f0f0',
+          }}>
+            <div style={{
+              flex: 1, padding: '12px 16px', borderRight: '1px solid #f0f0f0',
+              display: 'flex', flexDirection: 'column', gap: 2,
+            }}>
+              <span style={{ fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Reservas nuevas</span>
+              <span style={{ fontSize: 20, fontWeight: 700, color: syncReport.totalReservas > 0 ? '#6B21A8' : '#ccc' }}>
+                {syncReport.totalReservas}
+              </span>
+              <span style={{ fontSize: 11, color: '#6B21A8' }}>Pendiente · requieren cliente</span>
+            </div>
+            <div style={{
+              flex: 1, padding: '12px 16px', borderRight: '1px solid #f0f0f0',
+              display: 'flex', flexDirection: 'column', gap: 2,
+            }}>
+              <span style={{ fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Fechas bloqueadas</span>
+              <span style={{ fontSize: 20, fontWeight: 700, color: '#555' }}>
+                {syncReport.totalBloqueadas}
+              </span>
+              <span style={{ fontSize: 11, color: '#888' }}>Cerrada · no aparecen en lista</span>
+            </div>
+            <div style={{
+              flex: 1, padding: '12px 16px',
+              display: 'flex', flexDirection: 'column', gap: 2,
+            }}>
+              <span style={{ fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Actualizadas</span>
+              <span style={{ fontSize: 20, fontWeight: 700, color: '#374151' }}>
+                {syncReport.totalActualizadas}
+              </span>
+              <span style={{ fontSize: 11, color: '#888' }}>Sin cambios de estado</span>
+            </div>
+          </div>
+
+          {/* Detalle por propiedad */}
+          {syncReport.propDetalles.map((pd, idx) => (
+            <div key={idx} style={{ borderBottom: '1px solid #f5f5f5', padding: '12px 16px' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#444', marginBottom: 8 }}>
+                🏠 {pd.nombre}
+              </div>
+
+              {/* Reservas reales nuevas */}
+              {pd.reservasNuevas.length > 0 && (
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{
+                    fontSize: 11, fontWeight: 600, color: '#6B21A8',
+                    textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4,
+                  }}>
+                    📌 Reservas nuevas — agregá el cliente
+                  </div>
+                  {pd.reservasNuevas.map((r, i) => {
+                    const fmtD = (s) => { const [y,m,d] = s.split('-'); return `${d}/${m}/${y}` }
+                    const noches = Math.round((new Date(r.checkout) - new Date(r.checkin)) / 86400000)
+                    return (
+                      <div key={i} style={{
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        padding: '5px 10px', background: '#faf5ff',
+                        border: '1px solid #e9d5ff', borderRadius: 6, marginBottom: 4,
+                        fontSize: 12,
+                      }}>
+                        <span style={{ background: '#6B21A8', color: '#fff', padding: '1px 7px', borderRadius: 10, fontSize: 10, fontWeight: 600 }}>PENDIENTE</span>
+                        <span style={{ fontWeight: 500 }}>{fmtD(r.checkin)} → {fmtD(r.checkout)}</span>
+                        <span style={{ color: '#888' }}>{noches} noches</span>
+                        {r.summary && r.summary.toUpperCase() !== 'CLOSED' && (
+                          <span style={{ color: '#999', fontStyle: 'italic', marginLeft: 4 }}>{r.summary}</span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* Fechas bloqueadas */}
+              {pd.bloqueadasNuevas > 0 && (
+                <div style={{ fontSize: 12, color: '#888' }}>
+                  🔒 {pd.bloqueadasNuevas} fecha(s) bloqueada(s) nueva(s) — no aparecen como reservas
+                </div>
+              )}
+
+              {/* Solo actualizaciones, nada nuevo */}
+              {pd.reservasNuevas.length === 0 && pd.bloqueadasNuevas === 0 && pd.actualizadas > 0 && (
+                <div style={{ fontSize: 12, color: '#888' }}>
+                  ✓ {pd.actualizadas} evento(s) ya existían, actualizados sin cambios
+                </div>
+              )}
+
+              {pd.reservasNuevas.length === 0 && pd.bloqueadasNuevas === 0 && pd.actualizadas === 0 && (
+                <div style={{ fontSize: 12, color: '#bbb' }}>Sin novedades</div>
+              )}
+            </div>
+          ))}
+
+          {/* Conflictos */}
+          {syncReport.conflictos.length > 0 && (
+            <div style={{ padding: '10px 16px', background: '#FEF9C3', borderTop: '1px solid #FDE68A' }}>
+              <span style={{ fontSize: 12, color: '#92400E', fontWeight: 600 }}>
+                ⚠ {syncReport.conflictos.length} conflicto(s) omitido(s)
+              </span>
+              <span style={{ fontSize: 12, color: '#92400E', marginLeft: 4 }}>
+                — fechas que se superponen con reservas manuales existentes
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+
 
       {/* Leyenda de propiedades */}
       {propiedades.length > 0 && (
