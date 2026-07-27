@@ -122,8 +122,11 @@ export default function NuevaReserva({ onExito }) {
 
     if (conflictos && conflictos.length > 0) {
       const c = conflictos[0]
+      const nombreCliente = c.clientes?.nombre
+        ? `${c.clientes.nombre} ${c.clientes.apellido || ''}`.trim()
+        : 'otro huésped / fecha bloqueada'
       return setDispError(
-        `Sin disponibilidad: existe una reserva de ${c.clientes?.nombre} ${c.clientes?.apellido} del ${formatFecha(c.checkin)} al ${formatFecha(c.checkout)}.`
+        `Sin disponibilidad: existe una reserva de ${nombreCliente} del ${formatFecha(c.checkin)} al ${formatFecha(c.checkout)}.`
       )
     }
 

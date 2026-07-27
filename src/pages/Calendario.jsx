@@ -14,26 +14,30 @@ async function fetchIcsText(url) {
 }
 
 function parseIcs(text) {
+  const unfoldedText = text.replace(/\r?\n[ \t]/g, '')
   const events = []
-  const lines = text.split(/\r?\n/)
+  const lines = unfoldedText.split(/\r?\n/)
   let inEvent = false
   let event = {}
   for (const line of lines) {
     if (line.startsWith('BEGIN:VEVENT')) { inEvent = true; event = {} }
     else if (line.startsWith('END:VEVENT')) { inEvent = false; events.push(event) }
     else if (inEvent) {
-      if (line.startsWith('DTSTART;')) event.start = line.replace('DTSTART;', '').split(':')[1]
-      else if (line.startsWith('DTSTART:')) event.start = line.replace('DTSTART:', '')
-      else if (line.startsWith('DTEND;')) event.end = line.replace('DTEND;', '').split(':')[1]
-      else if (line.startsWith('DTEND:')) event.end = line.replace('DTEND:', '')
-      else if (line.startsWith('SUMMARY:')) event.summary = line.replace('SUMMARY:', '')
-      else if (line.startsWith('DESCRIPTION:')) event.description = line.replace('DESCRIPTION:', '')
+      const colonIdx = line.indexOf(':')
+      if (colonIdx !== -1) {
+        const key = line.substring(0, colonIdx).toUpperCase()
+        const val = line.substring(colonIdx + 1).trim()
+        if (key.startsWith('DTSTART')) event.start = val
+        else if (key.startsWith('DTEND')) event.end = val
+        else if (key.startsWith('SUMMARY')) event.summary = val
+        else if (key.startsWith('DESCRIPTION')) event.description = val
+      }
     }
   }
   return events.map(e => {
     const formatDate = (d) => {
       if (!d) return ''
-      return d.replace(/=$/, '').replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')
+      return d.replace(/=$/, '').replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3').slice(0, 10)
     }
     return {
       start: formatDate(e.start),
@@ -65,13 +69,16 @@ async function upsertIcalReservas(supabase, eventos, propiedadId, canal) {
     checkout = checkout.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')
 
     const summaryRaw = (ev.summary || '').trim()
+    const summaryUpper = summaryRaw.toUpperCase()
     const noches = diffNoches(checkin, checkout)
 
-    // Heurística de duración para Booking/Airbnb:
-    // Si la reserva dura 25 noches o más, asumimos que es un bloqueo de fechas/cierre manual (cerrada).
-    // Si dura menos de 25 noches, asumimos que es una reserva real pendiente de asignación de cliente (pendiente).
-    const esBloqueoMasivo = noches >= 25
-    const estadoNuevo = esBloqueoMasivo ? 'cerrada' : 'pendiente'
+    // Palabras clave de cierres y bloqueos de anfitrión/plataforma en iCal
+    const keywordsCierre = ['CLOSED', 'NOT AVAILABLE', 'NO DISPONIBLE', 'BLOQUEADO', 'BLOCKED', 'CIERRE', 'UNAVAILABLE']
+    const esCierreOBloqueo = keywordsCierre.some(kw => summaryUpper.includes(kw))
+
+    // Si tiene palabra clave de cierre o dura 25+ noches, se trata como 'cerrada'
+    const esCerrada = esCierreOBloqueo || noches >= 25
+    const estadoNuevo = esCerrada ? 'cerrada' : 'pendiente'
 
     const payload = {
       propiedad_id: propiedadId,
@@ -137,6 +144,48 @@ async function upsertIcalReservas(supabase, eventos, propiedadId, canal) {
     )
 
     if (conflictoExterno.length > 0) {
+      // Si el evento iCal es un bloqueo ('cerrada'), recortamos el evento para insertar
+      // únicamente los tramos de fechas que estén verdaderamente libres (sin cliente)
+      if (estadoNuevo === 'cerrada') {
+        const protectedSorted = [...conflictoExterno].sort((a, b) => (a.checkin || '').localeCompare(b.checkin || ''))
+        let currentStart = checkin
+        const tramos = []
+
+        for (const prot of protectedSorted) {
+          if (prot.checkin > currentStart) {
+            tramos.push({ start: currentStart, end: prot.checkin < checkout ? prot.checkin : checkout })
+          }
+          if (prot.checkout > currentStart) {
+            currentStart = prot.checkout
+          }
+        }
+        if (currentStart < checkout) {
+          tramos.push({ start: currentStart, end: checkout })
+        }
+
+        let procesadoAlgunTramo = false
+        for (const tramo of tramos) {
+          if (tramo.start >= tramo.end) continue
+          const subPayload = { ...payload, checkin: tramo.start, checkout: tramo.end }
+
+          const { data: subOverlaps } = await supabase
+            .from('reservas')
+            .select('id, checkin, checkout, estado')
+            .eq('propiedad_id', propiedadId)
+            .lt('checkin', tramo.end)
+            .gt('checkout', tramo.start)
+            .neq('estado', 'cancelada')
+
+          if (!subOverlaps || subOverlaps.length === 0) {
+            await supabase.from('reservas').insert(subPayload)
+            stats.inserted += 1
+            stats.insertedBloqueadas += 1
+            procesadoAlgunTramo = true
+          }
+        }
+        if (procesadoAlgunTramo) continue
+      }
+
       stats.conflicts.push({ checkin, checkout, estado: estadoNuevo })
       continue
     }
@@ -162,7 +211,7 @@ async function upsertIcalReservas(supabase, eventos, propiedadId, canal) {
     const { error: insertError } = await supabase.from('reservas').insert(payload)
     if (insertError) throw insertError
     stats.inserted += 1
-    if (esBloqueoMasivo) {
+    if (esCerrada) {
       stats.insertedBloqueadas += 1
     } else {
       stats.insertedReservas += 1

@@ -114,7 +114,7 @@ export default function Dashboard() {
         supabase.from('reservas')
           .select('id, checkin, checkout, estado, canal_origen, created_at, clientes(nombre, apellido), propiedades(nombre)')
           .in('estado', ['señada', 'pendiente'])
-          .order('created_at', { ascending: false })
+          .order('checkin', { ascending: true })
           .limit(10),
       ])
 

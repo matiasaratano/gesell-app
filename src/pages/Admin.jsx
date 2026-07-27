@@ -256,11 +256,53 @@ function CRUDReservas() {
   const [toast,        setToast]        = useState('')
   const [filtroEstado, setFiltroEstado] = useState('todas')
   const [filtroProp,   setFiltroProp]   = useState('todas')
+  const [ordenRes,     setOrdenRes]     = useState('checkin_asc')
+
+  const [creandoCliModal, setCreandoCliModal] = useState(false)
+  const [nuevoCliData, setNuevoCliData] = useState({
+    nombre: '', apellido: '', whatsapp: '', dni: '', email: '', ciudad: ''
+  })
+  const [guardandoCliRapido, setGuardandoCliRapido] = useState(false)
 
   const [searchParams, setSearchParams] = useSearchParams()
   const editReservaId = searchParams.get('reserva_id')
 
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(''), 2200) }
+
+  async function guardarNuevoClienteRapido(e) {
+    if (e) e.preventDefault()
+    if (!nuevoCliData.nombre.trim()) {
+      showToast('El nombre del cliente es obligatorio')
+      return
+    }
+    setGuardandoCliRapido(true)
+    const { data, error } = await supabase
+      .from('clientes')
+      .insert({
+        nombre: nuevoCliData.nombre.trim(),
+        apellido: nuevoCliData.apellido.trim() || null,
+        whatsapp: nuevoCliData.whatsapp.trim() || null,
+        dni: nuevoCliData.dni.trim() || null,
+        email: nuevoCliData.email.trim() || null,
+        ciudad: nuevoCliData.ciudad.trim() || null,
+      })
+      .select()
+      .single()
+
+    setGuardandoCliRapido(false)
+    if (error) {
+      showToast('Error al crear cliente: ' + error.message)
+      return
+    }
+
+    const clienteCreado = data
+    setClientes(prev => [...prev, clienteCreado].sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '')))
+    setEditando(prev => ({ ...prev, cliente_id: clienteCreado.id }))
+    setBusquedaCli(`${clienteCreado.nombre} ${clienteCreado.apellido || ''}`.trim())
+    setMostrarDropdownCli(false)
+    setCreandoCliModal(false)
+    showToast('✓ Cliente creado y asignado')
+  }
 
   async function cargar() {
     setLoading(true)
@@ -278,8 +320,8 @@ function CRUDReservas() {
       supabase
         .from('reservas')
         .select('*, clientes(nombre, apellido, whatsapp), propiedades(id, nombre)')
-        .order('checkin', { ascending: false })
-        .limit(100),
+        .order('checkin', { ascending: true })
+        .limit(200),
       supabase.from('propiedades').select('id, nombre').order('nombre'),
       supabase.from('clientes').select('id, nombre, apellido, dni').order('nombre')
     ])
@@ -306,7 +348,10 @@ function CRUDReservas() {
   }, [editReservaId, lista, editando, searchParams, setSearchParams])
 
   async function guardar() {
-    if (!editando.cliente_id) { showToast('Seleccioná un cliente'); return }
+    if (editando.estado !== 'cerrada' && !editando.cliente_id) {
+      showToast('Seleccioná o creá un cliente para esta reserva')
+      return
+    }
     if (!editando.propiedad_id) { showToast('Seleccioná una propiedad'); return }
     setGuardando(true)
     const { clientes, propiedades, created_at, noches, ...campos } = editando
@@ -340,27 +385,27 @@ function CRUDReservas() {
     return Math.round(diff / (1000 * 60 * 60 * 24))
   }
 
-  const ESTADOS = ['pendiente', 'confirmada', 'finalizada']
+  const ESTADOS = ['pendiente', 'confirmada', 'cerrada', 'finalizada']
 
   const COLORES_ESTADO = {
     pendiente:  { bg: '#F3E8FF', color: '#6B21A8' },
     confirmada: { bg: '#D1FAE5', color: '#065F46' },
+    cerrada:    { bg: '#E5E7EB', color: '#4B5563' },
     finalizada: { bg: '#F3F4F6', color: '#374151' },
     // Soporte para colores viejos si existen en la BD todavía
     señada:     { bg: '#FEF3C7', color: '#92400E' },
     activa:     { bg: '#DBEAFE', color: '#1E40AF' },
-    cerrada:    { bg: '#E5E7EB', color: '#4B5563' },
     cancelada:  { bg: '#FEE2E2', color: '#991B1B' },
   }
 
   const ESTADO_LABELS = {
     pendiente: 'Pendiente',
     confirmada: 'Confirmada',
+    cerrada: 'Cerrada / Bloqueada',
     finalizada: 'Finalizada',
     // Soporte para labels viejos
     señada: 'Seña',
     activa: 'Activa',
-    cerrada: 'Cerrada',
     cancelada: 'Cancelada',
   }
 
@@ -387,25 +432,41 @@ function CRUDReservas() {
 
       <div style={s.grid2}>
         <Campo label="Cliente *" style={{ position: 'relative' }}>
-          <input
-            type="text"
-            style={s.input}
-            placeholder="Buscar por nombre o DNI..."
-            value={busquedaCli}
-            onChange={e => {
-              setBusquedaCli(e.target.value)
-              setMostrarDropdownCli(true)
-              if (!e.target.value.trim()) {
-                setEditando(p => ({ ...p, cliente_id: '' }))
-              }
-            }}
-            onFocus={() => setMostrarDropdownCli(true)}
-          />
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input
+              type="text"
+              style={{ ...s.input, flex: 1 }}
+              placeholder="Buscar por nombre o DNI..."
+              value={busquedaCli}
+              onChange={e => {
+                setBusquedaCli(e.target.value)
+                setMostrarDropdownCli(true)
+                if (!e.target.value.trim()) {
+                  setEditando(p => ({ ...p, cliente_id: '' }))
+                }
+              }}
+              onFocus={() => setMostrarDropdownCli(true)}
+            />
+            <button
+              type="button"
+              style={{ ...s.btnSm, background: '#2d5a3d', color: '#fff', padding: '0 12px', whiteSpace: 'nowrap' }}
+              onClick={() => {
+                setNuevoCliData({
+                  nombre: busquedaCli.trim() || '',
+                  apellido: '', whatsapp: '', dni: '', email: '', ciudad: ''
+                })
+                setCreandoCliModal(true)
+              }}
+            >
+              + Nuevo
+            </button>
+          </div>
+
           {mostrarDropdownCli && (
             <div style={{
               position: 'absolute', top: '100%', left: 0, right: 0,
               background: '#fff', border: '1px solid #ddd', borderRadius: 8,
-              maxHeight: 180, overflowY: 'auto', zIndex: 100,
+              maxHeight: 200, overflowY: 'auto', zIndex: 100,
               boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
             }}>
               {clientes.filter(c => {
@@ -415,34 +476,41 @@ function CRUDReservas() {
                   (c.apellido ?? '').toLowerCase().includes(q) ||
                   (c.dni ?? '').toLowerCase().includes(q)
                 )
-              }).length === 0 ? (
-                <div style={{ padding: '8px 12px', fontSize: 13, color: '#999' }}>No se encontraron clientes</div>
-              ) : (
-                clientes.filter(c => {
-                  const q = busquedaCli.toLowerCase()
-                  return (
-                    (c.nombre ?? '').toLowerCase().includes(q) ||
-                    (c.apellido ?? '').toLowerCase().includes(q) ||
-                    (c.dni ?? '').toLowerCase().includes(q)
-                  )
-                }).slice(0, 10).map(c => (
-                  <div
-                    key={c.id}
-                    onClick={() => {
-                      setEditando(p => ({ ...p, cliente_id: c.id }))
-                      setBusquedaCli(`${c.nombre} ${c.apellido || ''}`)
-                      setMostrarDropdownCli(false)
-                    }}
-                    style={{
-                      padding: '8px 12px', cursor: 'pointer', fontSize: 13,
-                      borderBottom: '1px solid #f5f5f5',
-                      background: editando.cliente_id === c.id ? '#e8f0eb' : '#fff'
-                    }}
-                  >
-                    <strong>{c.nombre} {c.apellido || ''}</strong> {c.dni ? `· DNI ${c.dni}` : ''}
-                  </div>
-                ))
-              )}
+              }).slice(0, 8).map(c => (
+                <div
+                  key={c.id}
+                  onClick={() => {
+                    setEditando(p => ({ ...p, cliente_id: c.id }))
+                    setBusquedaCli(`${c.nombre} ${c.apellido || ''}`)
+                    setMostrarDropdownCli(false)
+                  }}
+                  style={{
+                    padding: '8px 12px', cursor: 'pointer', fontSize: 13,
+                    borderBottom: '1px solid #f5f5f5',
+                    background: editando.cliente_id === c.id ? '#e8f0eb' : '#fff'
+                  }}
+                >
+                  <strong>{c.nombre} {c.apellido || ''}</strong> {c.dni ? `· DNI ${c.dni}` : ''}
+                </div>
+              ))}
+
+              <div
+                onClick={() => {
+                  setNuevoCliData({
+                    nombre: busquedaCli.trim() || '',
+                    apellido: '', whatsapp: '', dni: '', email: '', ciudad: ''
+                  })
+                  setCreandoCliModal(true)
+                  setMostrarDropdownCli(false)
+                }}
+                style={{
+                  padding: '10px 12px', cursor: 'pointer', fontSize: 13,
+                  fontWeight: 'bold', color: '#2d5a3d', background: '#f4fbf6',
+                  borderTop: '1px solid #e0f0e5', textAlign: 'center'
+                }}
+              >
+                + Crear cliente {busquedaCli.trim() ? `"${busquedaCli}"` : 'nuevo'}
+              </div>
             </div>
           )}
         </Campo>
@@ -454,7 +522,7 @@ function CRUDReservas() {
           </select>
         </Campo>
         <Campo label="Estado">
-          <select style={s.input} value={editando.estado ?? 'señada'}
+          <select style={s.input} value={editando.estado ?? 'pendiente'}
             onChange={e => setEditando(p => ({ ...p, estado: e.target.value }))}>
             {ESTADOS.map(e => <option key={e} value={e}>{ESTADO_LABELS[e]}</option>)}
           </select>
@@ -508,6 +576,72 @@ function CRUDReservas() {
           {guardando ? 'Guardando…' : '✓ Guardar'}
         </button>
       </div>
+
+      {/* Modal de alta rápida de cliente dentro del formulario de reserva */}
+      {creandoCliModal && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.5)', zIndex: 999,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16
+        }}>
+          <div style={{ background: '#fff', borderRadius: 12, padding: 20, width: '100%', maxWidth: 450, boxShadow: '0 8px 24px rgba(0,0,0,0.2)' }}>
+            <h4 style={{ margin: '0 0 14px 0', fontSize: 16, fontWeight: 600, color: '#2d5a3d' }}>Alta rápida de cliente</h4>
+            <form onSubmit={guardarNuevoClienteRapido} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 500, color: '#444' }}>Nombre *</label>
+                <input
+                  type="text" required style={s.input}
+                  value={nuevoCliData.nombre}
+                  onChange={e => setNuevoCliData(p => ({ ...p, nombre: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 500, color: '#444' }}>Apellido</label>
+                <input
+                  type="text" style={s.input}
+                  value={nuevoCliData.apellido}
+                  onChange={e => setNuevoCliData(p => ({ ...p, apellido: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 500, color: '#444' }}>WhatsApp / Teléfono</label>
+                <input
+                  type="text" style={s.input} placeholder="Ej: 1112345678"
+                  value={nuevoCliData.whatsapp}
+                  onChange={e => setNuevoCliData(p => ({ ...p, whatsapp: e.target.value }))}
+                />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 500, color: '#444' }}>DNI</label>
+                  <input
+                    type="text" style={s.input}
+                    value={nuevoCliData.dni}
+                    onChange={e => setNuevoCliData(p => ({ ...p, dni: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 500, color: '#444' }}>Ciudad</label>
+                  <input
+                    type="text" style={s.input}
+                    value={nuevoCliData.ciudad}
+                    onChange={e => setNuevoCliData(p => ({ ...p, ciudad: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+                <button type="button" style={s.btnCancelar} onClick={() => setCreandoCliModal(false)}>
+                  Cancelar
+                </button>
+                <button type="submit" style={s.btnPrimario} disabled={guardandoCliRapido}>
+                  {guardandoCliRapido ? 'Guardando…' : '✓ Guardar y asignar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <Toast msg={toast} />
     </div>
   )
@@ -518,24 +652,37 @@ function CRUDReservas() {
     return `${d}/${m}/${y}`
   }
 
-  const reservasFiltradas = lista.filter(r => {
-    if (filtroEstado !== 'todas' && r.estado !== filtroEstado) return false
-    if (filtroProp !== 'todas' && r.propiedad_id !== filtroProp) return false
-    return true
-  })
+  const reservasFiltradas = lista
+    .filter(r => {
+      if (filtroEstado !== 'todas' && r.estado !== filtroEstado) return false
+      if (filtroProp !== 'todas' && r.propiedad_id !== filtroProp) return false
+      return true
+    })
+    .sort((a, b) => {
+      if (ordenRes === 'checkin_asc') return (a.checkin || '').localeCompare(b.checkin || '')
+      if (ordenRes === 'checkin_desc') return (b.checkin || '').localeCompare(a.checkin || '')
+      if (ordenRes === 'created_desc') return (b.created_at || '').localeCompare(a.created_at || '')
+      return 0
+    })
 
   return (
     <div>
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-        <select style={{ ...s.input, width: 160 }} value={filtroEstado}
+        <select style={{ ...s.input, width: 170 }} value={filtroEstado}
           onChange={e => setFiltroEstado(e.target.value)}>
           <option value="todas">Todos los estados</option>
           {ESTADOS.map(e => <option key={e} value={e}>{ESTADO_LABELS[e]}</option>)}
         </select>
-        <select style={{ ...s.input, width: 220 }} value={filtroProp}
+        <select style={{ ...s.input, width: 200 }} value={filtroProp}
           onChange={e => setFiltroProp(e.target.value)}>
           <option value="todas">Todas las propiedades</option>
           {propiedades.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+        </select>
+        <select style={{ ...s.input, width: 220 }} value={ordenRes}
+          onChange={e => setOrdenRes(e.target.value)}>
+          <option value="checkin_asc">📅 Check-in: Próximas primero</option>
+          <option value="checkin_desc">📅 Check-in: Más lejanas primero</option>
+          <option value="created_desc">🕒 Fecha de creación</option>
         </select>
         <div style={{ flex: 1 }} />
         <span style={{ fontSize: 13, color: '#888' }}>{reservasFiltradas.length} reserva(s)</span>
@@ -555,7 +702,13 @@ function CRUDReservas() {
                 onClick={() => setDetalle(r)}>
                 <div style={s.filaInfo}>
                   <span style={s.filaNombre}>
-                    {r.clientes?.nombre} {r.clientes?.apellido}
+                    {r.clientes?.nombre ? (
+                      `${r.clientes.nombre} ${r.clientes.apellido || ''}`
+                    ) : r.estado === 'cerrada' ? (
+                      <span style={{ color: '#666', fontStyle: 'italic' }}>Noches Bloqueadas / Cierre</span>
+                    ) : (
+                      <span style={{ color: '#D97706', fontStyle: 'italic' }}>Sin cliente — asignar</span>
+                    )}
                   </span>
                   <span style={s.filaSub}>
                     {r.propiedades?.nombre} · {fmt(r.checkin)} → {fmt(r.checkout)} · {r.noches} noches

@@ -24,8 +24,9 @@ function getSupabaseAdmin() {
 
 // ── Parser iCal (igual que el frontend en Calendario.jsx) ─────────────────────
 function parseIcs(text) {
+  const unfoldedText = text.replace(/\r?\n[ \t]/g, '')
   const events = []
-  const lines = text.split(/\r?\n/)
+  const lines = unfoldedText.split(/\r?\n/)
   let inEvent = false
   let event = {}
 
@@ -37,11 +38,14 @@ function parseIcs(text) {
       inEvent = false
       events.push(event)
     } else if (inEvent) {
-      if (line.startsWith('DTSTART;'))      event.start   = line.replace('DTSTART;', '').split(':')[1]
-      else if (line.startsWith('DTSTART:')) event.start   = line.replace('DTSTART:', '')
-      else if (line.startsWith('DTEND;'))   event.end     = line.replace('DTEND;', '').split(':')[1]
-      else if (line.startsWith('DTEND:'))   event.end     = line.replace('DTEND:', '')
-      else if (line.startsWith('SUMMARY:')) event.summary = line.replace('SUMMARY:', '')
+      const colonIdx = line.indexOf(':')
+      if (colonIdx !== -1) {
+        const key = line.substring(0, colonIdx).toUpperCase()
+        const val = line.substring(colonIdx + 1).trim()
+        if (key.startsWith('DTSTART')) event.start = val
+        else if (key.startsWith('DTEND')) event.end = val
+        else if (key.startsWith('SUMMARY')) event.summary = val
+      }
     }
   }
 
@@ -68,18 +72,31 @@ async function upsertReservas(supabase, eventos, propiedadId, canal) {
     const checkout = ev.end
     if (!checkin || !checkout) continue
 
-    const esCerrada = ev.summary.toUpperCase().includes('CLOSED')
+    const summaryRaw = (ev.summary || '').trim()
+    const summaryUpper = summaryRaw.toUpperCase()
+    const keywordsCierre = ['CLOSED', 'NOT AVAILABLE', 'NO DISPONIBLE', 'BLOQUEADO', 'BLOCKED', 'CIERRE', 'UNAVAILABLE']
+    const esCierreOBloqueo = keywordsCierre.some(kw => summaryUpper.includes(kw))
+
+    let noches = 0
+    if (checkin && checkout) {
+      const [y1, m1, d1] = checkin.split('-').map(Number)
+      const [y2, m2, d2] = checkout.split('-').map(Number)
+      noches = Math.max(0, Math.round((new Date(y2, m2 - 1, d2) - new Date(y1, m1 - 1, d1)) / 86400000))
+    }
+
+    const esCerrada = esCierreOBloqueo || noches >= 25
     const payload = {
       propiedad_id: propiedadId,
       checkin,
       checkout,
       canal_origen: canal,
-      estado: esCerrada ? 'confirmada' : 'pendiente',
+      estado: esCerrada ? 'cerrada' : 'pendiente',
+      notas_internas: summaryRaw || null,
     }
 
     const { data: overlaps, error } = await supabase
       .from('reservas')
-      .select('id, checkin, checkout, estado')
+      .select('id, checkin, checkout, estado, canal_origen, cliente_id')
       .eq('propiedad_id', propiedadId)
       .lt('checkin', checkout)
       .gt('checkout', checkin)
@@ -87,27 +104,96 @@ async function upsertReservas(supabase, eventos, propiedadId, canal) {
 
     if (error) throw error
 
+    // Buscar coincidencia exacta (mismas fechas Y mismo estado)
     const exactMatches = (overlaps ?? []).filter(
-      (r) => r.checkin === checkin && r.checkout === checkout && r.estado === payload.estado
+      (row) => row.checkin === checkin && row.checkout === checkout && row.estado === payload.estado
     )
 
-    // Eliminar duplicados exactos (si hay más de uno)
+    // Eliminar duplicados exactos si hay más de uno
     if (exactMatches.length > 1) {
-      const duplicateIds = exactMatches.slice(1).map((r) => r.id)
+      const duplicateIds = exactMatches.slice(1).map((row) => row.id)
       await supabase.from('reservas').delete().in('id', duplicateIds)
       stats.deduped += duplicateIds.length
     }
 
     const exactMatch = exactMatches[0]
     if (exactMatch?.id) {
+      if (
+        exactMatch.cliente_id ||
+        exactMatch.estado === 'confirmada' ||
+        exactMatch.estado === 'finalizada'
+      ) {
+        continue
+      }
       await supabase.from('reservas').update(payload).eq('id', exactMatch.id)
       stats.updated += 1
       continue
     }
 
-    if ((overlaps ?? []).length > 0) {
+    // Conflicto externo: reserva de otro canal, con cliente o confirmada/finalizada
+    const conflictoExterno = (overlaps ?? []).filter(
+      (row) =>
+        row.canal_origen !== canal ||
+        row.cliente_id ||
+        !['cerrada', 'pendiente'].includes(row.estado)
+    )
+
+    if (conflictoExterno.length > 0) {
+      if (payload.estado === 'cerrada') {
+        const protectedSorted = [...conflictoExterno].sort((a, b) => (a.checkin || '').localeCompare(b.checkin || ''))
+        let currentStart = checkin
+        const tramos = []
+
+        for (const prot of protectedSorted) {
+          if (prot.checkin > currentStart) {
+            tramos.push({ start: currentStart, end: prot.checkin < checkout ? prot.checkin : checkout })
+          }
+          if (prot.checkout > currentStart) {
+            currentStart = prot.checkout
+          }
+        }
+        if (currentStart < checkout) {
+          tramos.push({ start: currentStart, end: checkout })
+        }
+
+        let procesadoAlgunTramo = false
+        for (const tramo of tramos) {
+          if (tramo.start >= tramo.end) continue
+          const subPayload = { ...payload, checkin: tramo.start, checkout: tramo.end }
+
+          const { data: subOverlaps } = await supabase
+            .from('reservas')
+            .select('id, checkin, checkout, estado')
+            .eq('propiedad_id', propiedadId)
+            .lt('checkin', tramo.end)
+            .gt('checkout', tramo.start)
+            .neq('estado', 'cancelada')
+
+          if (!subOverlaps || subOverlaps.length === 0) {
+            await supabase.from('reservas').insert(subPayload)
+            stats.inserted += 1
+            procesadoAlgunTramo = true
+          }
+        }
+        if (procesadoAlgunTramo) continue
+      }
+
       stats.conflicts += 1
       continue
+    }
+
+    // Reemplazar solapamientos sin cliente del mismo canal
+    const solapamientosMismoCanal = (overlaps ?? []).filter(
+      (row) =>
+        row.canal_origen === canal &&
+        ['cerrada', 'pendiente'].includes(row.estado) &&
+        !row.cliente_id
+    )
+
+    if (solapamientosMismoCanal.length > 0) {
+      const idsBorrar = solapamientosMismoCanal.map((row) => row.id)
+      await supabase.from('reservas').delete().in('id', idsBorrar)
+      stats.deduped += idsBorrar.length
     }
 
     await supabase.from('reservas').insert(payload)

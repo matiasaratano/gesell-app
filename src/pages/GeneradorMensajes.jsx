@@ -35,7 +35,7 @@ function genCotizacion(p, { cotDesde, cotHasta, cotPxn, cotPersonas }) {
   const distSec = p.distribucion ? '\nDistribución:\n' + p.distribucion + '\n' : ''
   const webSec  = p.link_web ? '\nVer fotos: ' + p.link_web + '\n' : ''
 
-  return '¡Hola!\n\n'
+  return 'Hola!\n'
     + 'Te paso la información del ' + p.nombre + ':\n\n'
     + SEP + 'DEPARTAMENTO\n' + SEP
     + 'Dirección: ' + (p.ubicacion || p.direccion || '') + '\n'
@@ -66,7 +66,7 @@ function genFicha(p) {
   const firmaWeb  = esDP(esPN)
   // const webSec   = p.link_web ? 'Ver fotos: ' + p.link_web + '\n' : ''
 
-  return `Asunto: Confirmación de Reserva – ${p.nombre}\n\n¡Hola!\n\n${intro}\n\n`
+  return `Asunto: Confirmación de Reserva – ${p.nombre}\n\n${intro}\n\n`
     + SEP + 'POLÍTICAS DE PAGO\n' + SEP
     + '  • Método de pago: Transferencia bancaria.\n'
     + '  • Reserva: Depósito del 30% dentro de las 48 hs de recibir los datos bancarios. Pasado ese plazo, la reserva puede ser cancelada.\n'
@@ -98,7 +98,7 @@ function genDetalle(p, { detCheckin, detCheckout, detTotal }) {
   const veh    = p.restriccion_vehiculos ? '  • No está permitido ingresar vehículos al predio (motos, cuatriciclos, etc.).\n' : ''
   const alias  = p.alias_cbu || 'maratano.mp'
 
-  return `Detalle de su reserva – ${marca}\n\n¡Hola!\n\n`
+  return `Detalle de su reserva – ${marca}\n\n`
     + `Gracias por reservar en ${marca}. Leé atentamente la información de tu reserva:\n\n`
     + SEP + 'DETALLES DE LA RESERVA\n' + SEP
     + `  • Departamento: ${p.nombre}\n`
@@ -132,7 +132,7 @@ function genNoDisponible(p, { ndDesde, ndHasta }) {
     : 'para las fechas consultadas'
   const fw = esDP(!p.marca)
 
-  return `¡Hola!\n\nGracias por tu consulta.\n\n`
+  return `Hola!\n\nGracias por tu consulta.\n\n`
     + `Lamentablemente el ${p.nombre} no tiene disponibilidad ${fechas}.\n\n`
     + '¿Tenés flexibilidad? Con gusto te consulto disponibilidad para otra fecha.\n\n'
     + 'Saludos,\nMatías\n📞 +54 9 2255-536640' + fw

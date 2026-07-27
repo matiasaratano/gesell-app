@@ -117,16 +117,28 @@ export default function Reportes() {
   const diasDisponibles = diasPeriodo * cantProps
 
   // Noches ocupadas (clamp al rango del período)
+  // 'dHasta' es la fecha del ÚLTIMO DÍA del período (inclusiva).
+  // Como las noches se cuentan entre checkin y checkout (exclusive),
+  // le sumamos 1 día a dHasta para que el último día del período quede completo.
+  function calcNochesEnPeriodo(checkin, checkout, dDesde, dHasta) {
+    if (!checkin || !checkout || !dDesde || !dHasta) return 0
+    // Convertir dHasta a exclusivo (+1 día)
+    const [yh, mh, dh] = dHasta.split('-').map(Number)
+    const hastaDate = new Date(yh, mh - 1, dh + 1)
+    const hastaExcl = `${hastaDate.getFullYear()}-${String(hastaDate.getMonth() + 1).padStart(2, '0')}-${String(hastaDate.getDate()).padStart(2, '0')}`
+    const ci = checkin > dDesde ? checkin : dDesde
+    const co = checkout < hastaExcl ? checkout : hastaExcl
+    if (co <= ci) return 0
+    const [ya, ma, da] = ci.split('-').map(Number)
+    const [yb, mb, db] = co.split('-').map(Number)
+    return Math.max(0, Math.round((new Date(yb, mb - 1, db) - new Date(ya, ma - 1, da)) / 86400000))
+  }
+
   const nochesOcupadas = reales.reduce((acc, r) => {
-    const ci = r.checkin > desde ? r.checkin : desde
-    const co = r.checkout < hasta ? r.checkout : hasta
-    const [ya,ma,da] = ci.split('-').map(Number)
-    const [yb,mb,db] = co.split('-').map(Number)
-    const n = Math.max(0, Math.round((new Date(yb,mb-1,db) - new Date(ya,ma-1,da)) / 86400000))
-    return acc + n
+    return acc + calcNochesEnPeriodo(r.checkin, r.checkout, desde, hasta)
   }, 0)
 
-  const ocupacion = diasDisponibles > 0 ? Math.round((nochesOcupadas / diasDisponibles) * 100) : 0
+  const ocupacion = diasDisponibles > 0 ? Math.min(100, Math.round((nochesOcupadas / diasDisponibles) * 100)) : 0
 
   const totalIngresos  = reales.reduce((acc, r) => acc + (r.precio_total ?? 0), 0)
   const totalNoches    = reales.reduce((acc, r) => acc + (r.noches ?? 0), 0)
@@ -137,12 +149,12 @@ export default function Reportes() {
   const pendientes = reservas.filter(r => r.estado === 'señada' || r.estado === 'pendiente')
   const canceladas = reservas.filter(r => r.estado === 'cancelada')
 
-  // Por propiedad
+  // Por propiedad (acotado al período)
   const porProp = propiedades.map(p => {
     const rs = reales.filter(r => r.propiedad_id === p.id)
     const ing = rs.reduce((a, r) => a + (r.precio_total ?? 0), 0)
-    const noches = rs.reduce((a, r) => a + (r.noches ?? 0), 0)
-    const ocp = diasPeriodo > 0 ? Math.round((noches / diasPeriodo) * 100) : 0
+    const noches = rs.reduce((a, r) => a + calcNochesEnPeriodo(r.checkin, r.checkout, desde, hasta), 0)
+    const ocp = diasPeriodo > 0 ? Math.min(100, Math.round((noches / diasPeriodo) * 100)) : 0
     return { ...p, reservas: rs.length, ingresos: ing, noches, ocupacion: ocp }
   }).filter(p => p.reservas > 0 || propId === 'todas')
 
@@ -300,7 +312,17 @@ export default function Reportes() {
                   const est = ESTADO_STYLE[r.estado] ?? { bg: '#f0f0f0', color: '#333' }
                   return (
                     <tr key={r.id}>
-                      <td style={s.td}><strong>{r.clientes?.nombre} {r.clientes?.apellido}</strong></td>
+                      <td style={s.td}>
+                        <strong>
+                          {r.clientes?.nombre ? (
+                            `${r.clientes.nombre} ${r.clientes.apellido || ''}`.trim()
+                          ) : r.estado === 'cerrada' ? (
+                            <span style={{ color: '#666', fontStyle: 'italic' }}>Noches Bloqueadas</span>
+                          ) : (
+                            <span style={{ color: '#888', fontStyle: 'italic' }}>Sin cliente</span>
+                          )}
+                        </strong>
+                      </td>
                       <td style={s.td}>{r.propiedades?.nombre}</td>
                       <td style={s.td}>{fmtFecha(r.checkin)}</td>
                       <td style={s.td}>{fmtFecha(r.checkout)}</td>
