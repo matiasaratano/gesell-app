@@ -286,6 +286,10 @@ function hoySrt() {
   return toStr(d.getFullYear(), d.getMonth() + 1, d.getDate())
 }
 
+function esDiaPasado(ds) {
+  return ds < hoySrt()
+}
+
 function ultimoDiaMes(year, month0) {
   // new Date(year, month+1, 0) da el último día del mes (month es 0-indexed)
   return new Date(year, month0 + 1, 0).getDate()
@@ -342,6 +346,10 @@ function nombreCanal(canal) {
 function tipoCierreReserva(r) {
   if (esCierreManual(r)) return 'Cierre manual'
   return `Cierre ${nombreCanal(r?.canal_origen)}`
+}
+
+function esReservaPasada(r) {
+  return r?.estado === 'finalizada' || (!!r?.checkout && r.checkout < hoySrt())
 }
 
 // ─── Componente ────────────────────────────────────────────────────────────────
@@ -474,6 +482,13 @@ export default function Calendario() {
       // Rango: primer y último día del mes visible
       const desde = toStr(year, month + 1, 1)
       const hasta = toStr(year, month + 1, ultimoDiaMes(year, month))
+      const hoy = hoySrt()
+
+      await supabase
+        .from('reservas')
+        .update({ estado: 'finalizada' })
+        .lt('checkout', hoy)
+        .not('estado', 'in', '("finalizada","cancelada","cerrada")')
 
       const [resProps, resRes, resBloqueos] = await Promise.all([
         supabase
@@ -505,28 +520,7 @@ export default function Calendario() {
       // bloqueos table may not exist yet; ignore error gracefully
       setBloqueos(resBloqueos.data ?? [])
 
-      const reservasData = resRes.data ?? []
-      const hoy = hoySrt()
-      const vencidas = reservasData.filter(
-        (r) => r.estado !== 'finalizada' && r.checkout < hoy
-      )
-
-      if (vencidas.length > 0) {
-        const idsVencidas = vencidas.map((r) => r.id)
-        const { error: finalizaError } = await supabase
-          .from('reservas')
-          .update({ estado: 'finalizada' })
-          .in('id', idsVencidas)
-
-        if (!finalizaError) {
-          const idsSet = new Set(idsVencidas)
-          setReservas(reservasData.map((r) => (idsSet.has(r.id) ? { ...r, estado: 'finalizada' } : r)))
-        } else {
-          setReservas(reservasData)
-        }
-      } else {
-        setReservas(reservasData)
-      }
+      setReservas(resRes.data ?? [])
 
       setPropiedades(resProps.data ?? [])
     } catch (e) {
@@ -1158,6 +1152,7 @@ export default function Calendario() {
             {celdas.map(({ ds, actual, dia }) => {
               const dayRes = reservasDelDia(ds)
               const esHoy  = ds === hoyStr
+              const diaPasado = actual && esDiaPasado(ds)
 
               // Lógica de selección de rango
               const isStart = ds === rangoInicio
@@ -1193,7 +1188,7 @@ export default function Calendario() {
                     ...s.cell,
                     minHeight: isMobile ? 52 : isTablet ? 70 : 90,
                     padding: isMobile ? '4px 3px' : isTablet ? '4px 6px' : '6px 8px',
-                    background: bgSelection || (esHoy ? '#f0faf4' : actual ? '#ffffff' : '#f8f8f8'),
+                    background: bgSelection || (esHoy ? '#f0faf4' : diaPasado ? '#ECEFF1' : actual ? '#ffffff' : '#f8f8f8'),
                     cursor: 'pointer',
                     borderRadius: borderRadiusSelection,
                     transition: 'background-color 0.15s ease, border-radius 0.15s ease',
@@ -1208,7 +1203,7 @@ export default function Calendario() {
                     fontSize: isMobile ? 11 : isTablet ? 12 : 13,
                     width: isMobile ? 20 : isTablet ? 22 : 26,
                     height: isMobile ? 20 : isTablet ? 22 : 26,
-                    color: colorSelection || (actual ? (esHoy ? '#fff' : '#1a1a1a') : '#c0c0c0'),
+                    color: colorSelection || (actual ? (esHoy ? '#fff' : diaPasado ? '#6B7280' : '#1a1a1a') : '#c0c0c0'),
                     backgroundColor: colorSelection ? 'transparent' : undefined,
                   }}>
                     {dia}
@@ -1259,11 +1254,12 @@ export default function Calendario() {
                             width: 8,
                             height: 8,
                             borderRadius: '50%',
-                            background: propColor(r.propiedad_id),
+                            background: esReservaPasada(r) ? '#6B7280' : propColor(r.propiedad_id),
                             border: 'none',
                             padding: 0,
                             cursor: 'pointer',
                             flexShrink: 0,
+                            opacity: esReservaPasada(r) ? 0.65 : 1,
                           }}
                         />
                       ))}
@@ -1290,9 +1286,10 @@ export default function Calendario() {
                           }}
                           style={{
                             ...s.bar,
-                            background: propColor(r.propiedad_id),
+                            background: esReservaPasada(r) ? '#6B7280' : propColor(r.propiedad_id),
                             fontSize: isTablet ? 9.5 : 11,
                             padding: isTablet ? '1px 4px' : '2px 6px',
+                            opacity: esReservaPasada(r) ? 0.72 : 1,
                           }}
                           title={`${nombreReserva(r)} — ${r.propiedades?.nombre}`}
                         >
@@ -1959,6 +1956,7 @@ function TimelineView({
                   }
 
                   const esHoyCell = day.ds === hoyDs
+                  const diaPasado = esDiaPasado(day.ds)
                   return (
                     <div
                       key={day.d}
@@ -1966,7 +1964,7 @@ function TimelineView({
                       style={{
                         gridColumn: dIdx + 2,
                         gridRow: rowGridIndex,
-                        background: (isStart || isEnd || isSingleSelection) ? '#2d5a3d' : isSelected ? '#E8F5EC' : esHoyCell ? '#f0faf4' : bgCell,
+                        background: (isStart || isEnd || isSingleSelection) ? '#2d5a3d' : isSelected ? '#E8F5EC' : esHoyCell ? '#f0faf4' : diaPasado ? '#ECEFF1' : bgCell,
                         cursor: 'pointer',
                         borderRadius: borderRadiusSelection,
                         display: 'flex',
@@ -2025,7 +2023,7 @@ function TimelineView({
                         gridRow: rowGridIndex,
                         margin: '6px 2px',
                         padding: '4px 8px',
-                        background: propColor(r.propiedad_id),
+                        background: esReservaPasada(r) ? '#6B7280' : propColor(r.propiedad_id),
                         border: 'none',
                         borderRadius: 6,
                         color: '#ffffff',
@@ -2042,6 +2040,7 @@ function TimelineView({
                         boxShadow: '0 2px 4px rgba(0,0,0,0.12)',
                         height: 38,
                         alignSelf: 'center',
+                        opacity: esReservaPasada(r) ? 0.72 : 1,
                       }}
                       title={`${nombreReserva(r)} — ${r.propiedades?.nombre} (${formatFecha(r.checkin)} al ${formatFecha(r.checkout)})`}
                     >

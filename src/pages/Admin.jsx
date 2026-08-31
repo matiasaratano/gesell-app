@@ -23,6 +23,15 @@ function tipoCierreReserva(r) {
   return `Cierre ${nombreCanal(r?.canal_origen)}`
 }
 
+function padZ(n) {
+  return String(n).padStart(2, '0')
+}
+
+function hoyStr() {
+  const d = new Date()
+  return `${d.getFullYear()}-${padZ(d.getMonth() + 1)}-${padZ(d.getDate())}`
+}
+
 function nombreReservaAdmin(r) {
   const cliente = `${r.clientes?.nombre || ''} ${r.clientes?.apellido || ''}`.trim()
   if (cliente) return cliente
@@ -328,7 +337,7 @@ function CRUDReservas() {
 
   async function cargar() {
     setLoading(true)
-    const hoy = new Date().toISOString().split('T')[0]
+    const hoy = hoyStr()
 
     // Automatización: Finalizar reservas cuya fecha de checkout ya pasó
     // (excluye 'cerrada' para no tocar bloqueos de plataforma)
