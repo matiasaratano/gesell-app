@@ -8,6 +8,28 @@ const SECCIONES = [
   { id: 'clientes',    label: '👥 Clientes' },
 ]
 
+function nombreCanal(canal) {
+  if (canal === 'booking') return 'Booking'
+  if (canal === 'airbnb') return 'Airbnb'
+  if (canal === 'directo' || canal === 'manual') return 'Manual'
+  return canal ? canal.charAt(0).toUpperCase() + canal.slice(1) : 'Manual'
+}
+
+function esCierreManual(r) {
+  return r?.estado === 'cerrada' && ['directo', 'manual'].includes(r.canal_origen)
+}
+
+function tipoCierreReserva(r) {
+  return `Cierre ${nombreCanal(r?.canal_origen)}`
+}
+
+function nombreReservaAdmin(r) {
+  const cliente = `${r.clientes?.nombre || ''} ${r.clientes?.apellido || ''}`.trim()
+  if (cliente) return cliente
+  if (r.estado === 'cerrada') return tipoCierreReserva(r)
+  return 'Sin cliente — asignar'
+}
+
 /** Definidos fuera del CRUD: si van adentro, cada tecla recrea el tipo y React pierde el foco del input. */
 function AdminTextField({ label, campo, type = 'text', placeholder = '', editando, setEditando }) {
   return (
@@ -254,7 +276,7 @@ function CRUDReservas() {
   const [detalle,      setDetalle]      = useState(null)
   const [guardando,    setGuardando]    = useState(false)
   const [toast,        setToast]        = useState('')
-  const [filtroEstado, setFiltroEstado] = useState('todas')
+  const [filtroEstado, setFiltroEstado] = useState('operativas')
   const [filtroProp,   setFiltroProp]   = useState('todas')
   const [ordenRes,     setOrdenRes]     = useState('checkin_asc')
 
@@ -353,8 +375,50 @@ function CRUDReservas() {
       return
     }
     if (!editando.propiedad_id) { showToast('Seleccioná una propiedad'); return }
+    if (!editando.checkin || !editando.checkout) { showToast('Completá check-in y check-out'); return }
+    if (editando.checkout <= editando.checkin) { showToast('El check-out debe ser posterior al check-in'); return }
+
+    const reservasQuery = supabase
+      .from('reservas')
+      .select('id, checkin, checkout, estado, clientes(nombre, apellido)')
+      .eq('propiedad_id', editando.propiedad_id)
+      .neq('estado', 'cancelada')
+      .lt('checkin', editando.checkout)
+      .gt('checkout', editando.checkin)
+
+    const [resReservas, resBloqueos] = await Promise.all([
+      editando.id ? reservasQuery.neq('id', editando.id) : reservasQuery,
+      supabase
+        .from('bloqueos')
+        .select('id, fecha_inicio, fecha_fin, motivo')
+        .eq('propiedad_id', editando.propiedad_id)
+        .lt('fecha_inicio', editando.checkout)
+        .gt('fecha_fin', editando.checkin),
+    ])
+
+    if (resReservas.error) { showToast('Error verificando disponibilidad'); return }
+    if (resBloqueos.error) { showToast('Error verificando bloqueos manuales'); return }
+
+    if ((resReservas.data ?? []).length > 0) {
+      const c = resReservas.data[0]
+      const nombreCliente = c.clientes?.nombre
+        ? `${c.clientes.nombre} ${c.clientes.apellido || ''}`.trim()
+        : 'otra reserva / fecha cerrada'
+      showToast(`Sin disponibilidad: se superpone con ${nombreCliente}`)
+      return
+    }
+
+    if ((resBloqueos.data ?? []).length > 0) {
+      showToast('Sin disponibilidad: se superpone con noches cerradas manualmente')
+      return
+    }
+
     setGuardando(true)
-    const { clientes, propiedades, created_at, noches, ...campos } = editando
+    const { clientes, propiedades, created_at, noches, ...camposRaw } = editando
+    const campos = {
+      ...camposRaw,
+      canal_origen: camposRaw.canal_origen === 'manual' ? 'directo' : camposRaw.canal_origen,
+    }
     let error
     if (editando.id) {
       ({ error } = await supabase.from('reservas').update(campos).eq('id', editando.id))
@@ -420,7 +484,7 @@ function CRUDReservas() {
     precio_total: '',
     estado: 'pendiente',
     notas_internas: '',
-    canal_origen: 'manual',
+    canal_origen: 'directo',
   }
 
   if (editando) return (
@@ -528,9 +592,9 @@ function CRUDReservas() {
           </select>
         </Campo>
         <Campo label="Canal">
-          <select style={s.input} value={editando.canal_origen ?? 'manual'}
+          <select style={s.input} value={editando.canal_origen === 'manual' ? 'directo' : editando.canal_origen ?? 'directo'}
             onChange={e => setEditando(p => ({ ...p, canal_origen: e.target.value }))}>
-            <option value="manual">Manual</option>
+            <option value="directo">Manual / directo</option>
             <option value="booking">Booking</option>
             <option value="airbnb">Airbnb</option>
             <option value="whatsapp">WhatsApp</option>
@@ -654,8 +718,15 @@ function CRUDReservas() {
 
   const reservasFiltradas = lista
     .filter(r => {
-      if (filtroEstado !== 'todas' && r.estado !== filtroEstado) return false
       if (filtroProp !== 'todas' && r.propiedad_id !== filtroProp) return false
+      if (filtroEstado === 'operativas') {
+        return ['pendiente', 'confirmada', 'señada', 'activa'].includes(r.estado)
+      }
+      if (filtroEstado === 'cierres') return r.estado === 'cerrada'
+      if (filtroEstado === 'cierres_manual') return esCierreManual(r)
+      if (filtroEstado === 'cierres_booking') return r.estado === 'cerrada' && r.canal_origen === 'booking'
+      if (filtroEstado === 'finalizadas') return r.estado === 'finalizada'
+      if (filtroEstado !== 'todas' && r.estado !== filtroEstado) return false
       return true
     })
     .sort((a, b) => {
@@ -668,9 +739,14 @@ function CRUDReservas() {
   return (
     <div>
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-        <select style={{ ...s.input, width: 170 }} value={filtroEstado}
+        <select style={{ ...s.input, width: 220 }} value={filtroEstado}
           onChange={e => setFiltroEstado(e.target.value)}>
+          <option value="operativas">Pendientes y confirmadas</option>
           <option value="todas">Todos los estados</option>
+          <option value="cierres">Solo cierres</option>
+          <option value="cierres_manual">Solo cierres manuales</option>
+          <option value="cierres_booking">Solo cierres Booking</option>
+          <option value="finalizadas">Solo finalizadas</option>
           {ESTADOS.map(e => <option key={e} value={e}>{ESTADO_LABELS[e]}</option>)}
         </select>
         <select style={{ ...s.input, width: 200 }} value={filtroProp}
@@ -700,23 +776,25 @@ function CRUDReservas() {
             return (
               <div key={r.id} style={s.fila} className="fila-clickeable"
                 onClick={() => setDetalle(r)}>
-                <div style={s.filaInfo}>
-                  <span style={s.filaNombre}>
-                    {r.clientes?.nombre ? (
-                      `${r.clientes.nombre} ${r.clientes.apellido || ''}`
-                    ) : r.estado === 'cerrada' ? (
-                      <span style={{ color: '#666', fontStyle: 'italic' }}>Noches Bloqueadas / Cierre</span>
-                    ) : (
-                      <span style={{ color: '#D97706', fontStyle: 'italic' }}>Sin cliente — asignar</span>
-                    )}
-                  </span>
+	                <div style={s.filaInfo}>
+	                  <span style={s.filaNombre}>
+	                    {r.clientes?.nombre ? (
+	                      nombreReservaAdmin(r)
+	                    ) : r.estado === 'cerrada' ? (
+	                      <span style={{ color: '#666', fontStyle: 'italic' }}>{tipoCierreReserva(r)}</span>
+	                    ) : (
+	                      <span style={{ color: '#D97706', fontStyle: 'italic' }}>{nombreReservaAdmin(r)}</span>
+	                    )}
+	                  </span>
                   <span style={s.filaSub}>
                     {r.propiedades?.nombre} · {fmt(r.checkin)} → {fmt(r.checkout)} · {r.noches} noches
                     {r.precio_total ? ` · $${Number(r.precio_total).toLocaleString('es-AR')}` : ''}
                   </span>
                 </div>
                 <div style={s.filaAcciones} onClick={e => e.stopPropagation()}>
-                  <span style={{ ...s.badge, background: ce.bg, color: ce.color }}>{ESTADO_LABELS[r.estado] || r.estado}</span>
+	                  <span style={{ ...s.badge, background: ce.bg, color: ce.color }}>
+	                    {r.estado === 'cerrada' ? nombreCanal(r.canal_origen) : (ESTADO_LABELS[r.estado] || r.estado)}
+	                  </span>
                   <button style={s.btnSm} onClick={() => { setEditando({ ...r }); setDetalle(null) }}>Editar</button>
                 </div>
               </div>
@@ -773,11 +851,11 @@ function ModalDetalleReserva({ reserva: r, propiedades, estados, estadoLabels, c
   return (
     <div style={s.overlay} onClick={onClose}>
       <div style={{ ...s.modal, maxWidth: 500 }} onClick={e => e.stopPropagation()}>
-        <div style={s.modalHeader}>
-          <div>
-            <div style={s.modalNombre}>{r.clientes?.nombre} {r.clientes?.apellido}</div>
-            <div style={s.modalPropiedad}>{r.propiedades?.nombre}</div>
-          </div>
+	        <div style={s.modalHeader}>
+	          <div>
+	            <div style={s.modalNombre}>{nombreReservaAdmin(r)}</div>
+	            <div style={s.modalPropiedad}>{r.propiedades?.nombre}</div>
+	          </div>
           <button style={s.closeBtn} onClick={onClose}>✕</button>
         </div>
 
@@ -794,7 +872,8 @@ function ModalDetalleReserva({ reserva: r, propiedades, estados, estadoLabels, c
               value={r.precio_total ? `$${Number(r.precio_total).toLocaleString('es-AR')}` : '—'}
               highlight
             />
-            <DatoModal label="Canal" value={r.canal_origen || '—'} />
+	            {r.estado === 'cerrada' && <DatoModal label="Tipo de cierre" value={tipoCierreReserva(r)} highlight />}
+	            <DatoModal label="Canal" value={nombreCanal(r.canal_origen)} />
           </div>
 
           {r.notas_internas && (

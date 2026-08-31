@@ -30,6 +30,94 @@ function calcNoches(checkin, checkout) {
   return Math.max(0, Math.round((new Date(y2,m2-1,d2) - new Date(y1,m1-1,d1)) / 86400000))
 }
 
+function diasHasta(fecha) {
+  const hoy = hoyStr()
+  const [y1,m1,d1] = hoy.split('-').map(Number)
+  const [y2,m2,d2] = fecha.split('-').map(Number)
+  return Math.round((new Date(y2,m2-1,d2) - new Date(y1,m1-1,d1)) / 86400000)
+}
+
+function reservaNombre(r) {
+  const nombre = `${r.clientes?.nombre || ''} ${r.clientes?.apellido || ''}`.trim()
+  if (nombre) return nombre
+  if (r.notas_internas) return r.notas_internas
+  return r.canal_origen === 'booking' ? 'Reserva de Booking' : 'Reserva sin cliente'
+}
+
+function nombreCanal(canal) {
+  if (canal === 'booking') return 'Booking'
+  if (canal === 'airbnb') return 'Airbnb'
+  if (canal === 'directo' || canal === 'manual') return 'Manual'
+  return canal ? canal.charAt(0).toUpperCase() + canal.slice(1) : 'Manual'
+}
+
+function tipoCierreReserva(r) {
+  return `Cierre ${nombreCanal(r?.canal_origen)}`
+}
+
+function buildTareas(reservas = []) {
+  return reservas.flatMap((r) => {
+    const tareas = []
+    const prop = r.propiedades?.nombre || 'Propiedad sin nombre'
+    const fechas = `${prop} · ${fmtFecha(r.checkin)} → ${fmtFecha(r.checkout)}`
+    const canal = r.canal_origen ? r.canal_origen.charAt(0).toUpperCase() + r.canal_origen.slice(1) : 'Manual'
+    const precio = Number(r.precio_total || 0)
+    const esBooking = r.canal_origen === 'booking'
+
+    if (!r.cliente_id) {
+      tareas.push({
+        id: `${r.id}-cliente`,
+        reservaId: r.id,
+        tipo: r.canal_origen === 'booking' ? 'Booking sin cliente' : 'Falta cliente',
+        titulo: reservaNombre(r),
+        detalle: fechas,
+        color: '#92400E',
+        bg: '#FEF3C7',
+      })
+    }
+
+    if (!precio) {
+      tareas.push({
+        id: `${r.id}-precio`,
+        reservaId: r.id,
+        tipo: 'Falta precio',
+        titulo: reservaNombre(r),
+        detalle: `${fechas} · ${canal}`,
+        color: '#1E40AF',
+        bg: '#DBEAFE',
+      })
+    }
+
+    if (r.estado === 'pendiente') {
+      tareas.push({
+        id: `${r.id}-confirmar`,
+        reservaId: r.id,
+        tipo: 'Confirmar seña',
+        titulo: reservaNombre(r),
+        detalle: esBooking
+          ? `${fechas} · si paga por fuera, pasar a confirmada`
+          : `${fechas} · pasar a confirmada cuando pague`,
+        color: '#6B21A8',
+        bg: '#F3E8FF',
+      })
+    }
+
+    if (r.estado === 'pendiente' && esBooking && diasHasta(r.checkin) <= 45) {
+      tareas.push({
+        id: `${r.id}-contactar-booking`,
+        reservaId: r.id,
+        tipo: 'Contactar Booking',
+        titulo: reservaNombre(r),
+        detalle: `${fechas} · confirmar si sigue en pie`,
+        color: '#0F4D90',
+        bg: '#DBEAFE',
+      })
+    }
+
+    return tareas
+  }).slice(0, 12)
+}
+
 // ─── Colores de estado ────────────────────────────────────────────────────────
 const ESTADO_STYLE = {
   señada:     { bg: '#FEF3C7', color: '#92400E' },
@@ -50,15 +138,32 @@ const CANAL_ICON = {
   directo:  '🤝',
 }
 
+function useIsMobile(breakpoint = 640) {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth < breakpoint : false
+  )
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mq = window.matchMedia(`(max-width: ${breakpoint - 1}px)`)
+    const handler = (e) => setIsMobile(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [breakpoint])
+
+  return isMobile
+}
+
 // ─── Componente principal ─────────────────────────────────────────────────────
 export default function Dashboard() {
-  const hoy = hoyStr()
+  const isMobile = useIsMobile()
   const [hora, setHora] = useState(fmtHora())
 
   const [alojadas,   setAlojadas]   = useState([])
   const [ingresan,   setIngresan]   = useState([])
   const [salen,      setSalen]      = useState([])
   const [solicitudes,setSolicitudes] = useState([])
+  const [tareas,     setTareas]     = useState([])
   const [propiedades,setPropiedades] = useState([])
   const [loading,    setLoading]    = useState(true)
 
@@ -83,7 +188,7 @@ export default function Dashboard() {
         .lt('checkout', hoy)
         .not('estado', 'in', '("finalizada","cancelada","cerrada")')
 
-      const [rProps, rAlojadas, rIngresan, rSalen, rSolicitudes] = await Promise.all([
+      const [rProps, rAlojadas, rIngresan, rSalen, rSolicitudes, rTareas] = await Promise.all([
 
         // Propiedades activas
         supabase.from('propiedades').select('id, nombre').eq('activa', true).order('nombre'),
@@ -116,6 +221,14 @@ export default function Dashboard() {
           .in('estado', ['señada', 'pendiente'])
           .order('checkin', { ascending: true })
           .limit(10),
+
+        // Tareas operativas sobre reservas actuales/futuras
+        supabase.from('reservas')
+          .select('id, cliente_id, checkin, checkout, precio_total, estado, canal_origen, notas_internas, clientes(nombre, apellido), propiedades(nombre)')
+          .gte('checkout', hoy)
+          .not('estado', 'in', '("cancelada","cerrada","finalizada")')
+          .order('checkin', { ascending: true })
+          .limit(80),
       ])
 
       setPropiedades(rProps.data ?? [])
@@ -123,6 +236,7 @@ export default function Dashboard() {
       setIngresan(rIngresan.data ?? [])
       setSalen(rSalen.data ?? [])
       setSolicitudes(rSolicitudes.data ?? [])
+      setTareas(buildTareas(rTareas.data ?? []))
     } catch (e) {
       // silencioso — cada sección maneja su propio vacío
     } finally {
@@ -130,16 +244,19 @@ export default function Dashboard() {
     }
   }
 
+  const alojadasReales = alojadas.filter(r => r.estado !== 'cerrada')
+  const cerradasAhora = alojadas.filter(r => r.estado === 'cerrada')
+
   return (
-    <div style={s.page}>
+    <div style={{ ...s.page, ...(isMobile ? s.pageMobile : {}) }}>
 
       {/* Header del día */}
-      <div style={s.header}>
+      <div style={{ ...s.header, ...(isMobile ? s.headerMobile : {}) }}>
         <div>
-          <h1 style={s.h1}>Panel principal</h1>
+          <h1 style={{ ...s.h1, ...(isMobile ? s.h1Mobile : {}) }}>Panel principal</h1>
           <div style={s.fecha}>{fmtDiaSemana()}</div>
         </div>
-        <div style={s.reloj}>{hora}</div>
+        <div style={{ ...s.reloj, ...(isMobile ? s.relojMobile : {}) }}>{hora}</div>
       </div>
 
       {loading ? (
@@ -147,13 +264,22 @@ export default function Dashboard() {
       ) : (
         <>
           {/* ── Fila 1: métricas rápidas ── */}
-          <div style={s.metricasRow}>
+          <div style={{ ...s.metricasRow, ...(isMobile ? s.metricasRowMobile : {}) }}>
             <MetricaCard
-              valor={alojadas.length}
+              valor={alojadasReales.length}
               label="Alojadas ahora"
               color="#2d5a3d"
               bg="#e8f0eb"
               icono="🏠"
+              compact={isMobile}
+            />
+            <MetricaCard
+              valor={cerradasAhora.length}
+              label="Cerradas ahora"
+              color="#4B5563"
+              bg="#E5E7EB"
+              icono="🔒"
+              compact={isMobile}
             />
             <MetricaCard
               valor={ingresan.length}
@@ -161,6 +287,7 @@ export default function Dashboard() {
               color="#1E40AF"
               bg="#DBEAFE"
               icono="→"
+              compact={isMobile}
             />
             <MetricaCard
               valor={salen.length}
@@ -168,6 +295,7 @@ export default function Dashboard() {
               color="#92400E"
               bg="#FEF3C7"
               icono="←"
+              compact={isMobile}
             />
             <MetricaCard
               valor={solicitudes.length}
@@ -175,16 +303,25 @@ export default function Dashboard() {
               color="#6B21A8"
               bg="#F3E8FF"
               icono="📋"
+              compact={isMobile}
             />
           </div>
 
+          <Seccion titulo="Tareas para ordenar" badge={tareas.length} style={s.tareasCard}>
+            {tareas.length === 0 ? (
+              <Vacio texto="No hay reservas futuras con datos pendientes" />
+            ) : (
+              tareas.map(t => <FilaTarea key={t.id} tarea={t} compact={isMobile} />)
+            )}
+          </Seccion>
+
           {/* ── Grilla de 2 columnas de reservas ── */}
-          <div style={s.grid2}>
+          <div style={{ ...s.grid2, ...(isMobile ? s.grid2Mobile : {}) }}>
             {/* Columna Izquierda: Alojadas ahora + Solicitudes pendientes */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <Seccion titulo="Alojadas ahora" badge={alojadas.length} accion={{ label: 'Ver calendario', to: '/calendario' }}>
+            <div style={s.columnStack}>
+              <Seccion titulo="Alojadas ahora" badge={alojadasReales.length} accion={{ label: 'Ver calendario', to: '/calendario' }}>
                 {alojadas.length === 0 ? (
-                  <Vacio texto="No hay huéspedes alojados en este momento" />
+                  <Vacio texto="No hay huéspedes alojados ni noches cerradas en este momento" />
                 ) : (
                   alojadas.map(r => (
                     <FilaReserva key={r.id} reserva={r} mostrarProp />
@@ -229,7 +366,7 @@ export default function Dashboard() {
             </div>
 
             {/* Columna Derecha: Ingresan hoy + Salen hoy */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={s.columnStack}>
               <Seccion titulo="Ingresan hoy" badge={ingresan.length} accion={{ label: '+ Nueva', to: '/nueva' }}>
                 {ingresan.length === 0 ? (
                   <Vacio texto="Sin ingresos programados hoy" />
@@ -255,19 +392,19 @@ export default function Dashboard() {
 
 // ─── Sub-componentes ──────────────────────────────────────────────────────────
 
-function MetricaCard({ valor, label, color, bg, icono }) {
+function MetricaCard({ valor, label, color, bg, icono, compact = false }) {
   return (
-    <div style={{ ...s.metricaCard, background: bg }}>
+    <div style={{ ...s.metricaCard, ...(compact ? s.metricaCardMobile : {}), background: bg }}>
       <div style={{ ...s.metricaIcono, color }}>{icono}</div>
-      <div style={{ ...s.metricaValor, color }}>{valor}</div>
-      <div style={{ ...s.metricaLabel, color }}>{label}</div>
+      <div style={{ ...s.metricaValor, ...(compact ? s.metricaValorMobile : {}), color }}>{valor}</div>
+      <div style={{ ...s.metricaLabel, ...(compact ? s.metricaLabelMobile : {}), color }}>{label}</div>
     </div>
   )
 }
 
-function Seccion({ titulo, badge, accion, children }) {
+function Seccion({ titulo, badge, accion, children, style }) {
   return (
-    <div style={s.card}>
+    <div style={{ ...s.card, ...style }}>
       <div style={s.cardHeader}>
         <div style={s.cardTituloRow}>
           <span style={s.cardTitulo}>{titulo}</span>
@@ -284,6 +421,9 @@ function Seccion({ titulo, badge, accion, children }) {
 
 function FilaReserva({ reserva: r, mostrarProp }) {
   const noches = r.noches ?? calcNoches(r.checkin, r.checkout)
+  const esCerrada = r.estado === 'cerrada'
+  const nombreCliente = `${r.clientes?.nombre || ''} ${r.clientes?.apellido || ''}`.trim()
+  const titulo = nombreCliente || (esCerrada ? tipoCierreReserva(r) : 'Sin cliente')
   const waLink = r.clientes?.whatsapp
     ? `https://wa.me/${r.clientes.whatsapp.replace(/\D/g, '')}`
     : null
@@ -296,7 +436,7 @@ function FilaReserva({ reserva: r, mostrarProp }) {
     >
       <div style={s.filaReservaLeft}>
         <div style={s.nombre}>
-          {r.clientes?.nombre} {r.clientes?.apellido}
+          {titulo}
         </div>
         <div style={s.sub}>
           {mostrarProp && r.propiedades?.nombre && (
@@ -313,7 +453,7 @@ function FilaReserva({ reserva: r, mostrarProp }) {
           background: ESTADO_STYLE[r.estado]?.bg ?? '#f0f0f0',
           color:      ESTADO_STYLE[r.estado]?.color ?? '#333',
         }}>
-          {r.estado}
+          {esCerrada ? nombreCanal(r.canal_origen) : r.estado}
         </span>
         {waLink && (
           <a href={waLink} target="_blank" rel="noreferrer" style={s.btnWA} onClick={e => e.stopPropagation()}>WA</a>
@@ -329,38 +469,74 @@ function Vacio({ texto }) {
   )
 }
 
+function FilaTarea({ tarea: t, compact = false }) {
+  return (
+    <Link
+      to={`/admin?seccion=reservas&reserva_id=${t.reservaId}`}
+      style={{ ...s.filaTareaLink, ...(compact ? s.filaTareaLinkMobile : {}) }}
+      className="fila-clickeable"
+    >
+      <span style={{ ...s.tareaTipo, ...(compact ? s.tareaTipoMobile : {}), background: t.bg, color: t.color }}>
+        {t.tipo}
+      </span>
+      <div style={s.filaTareaInfo}>
+        <div style={s.nombre}>{t.titulo}</div>
+        <div style={s.sub}>{t.detalle}</div>
+      </div>
+      <span style={s.tareaArrow}>→</span>
+    </Link>
+  )
+}
+
 // ─── Estilos ──────────────────────────────────────────────────────────────────
 const s = {
   page: {
     maxWidth: 1100, margin: '0 auto', padding: '28px 20px 60px',
     fontFamily: 'system-ui, -apple-system, sans-serif',
   },
+  pageMobile: {
+    padding: '16px 10px 48px',
+  },
 
   header: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
     marginBottom: 28,
   },
+  headerMobile: {
+    marginBottom: 18,
+    gap: 10,
+  },
   h1: { fontSize: 24, fontWeight: 700, letterSpacing: '-0.03em', color: '#1a1814', margin: 0 },
+  h1Mobile: { fontSize: 21 },
   fecha: { fontSize: 13, color: '#888', marginTop: 4 },
   reloj: { fontSize: 28, fontWeight: 300, color: '#2d5a3d', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' },
+  relojMobile: { fontSize: 22 },
 
   loadingPage: { padding: 60, textAlign: 'center', color: '#aaa', fontSize: 14 },
 
   // Métricas
-  metricasRow: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 },
+  metricasRow: { display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 20 },
+  metricasRowMobile: { gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8, marginBottom: 12 },
   metricaCard: { borderRadius: 12, padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 4 },
+  metricaCardMobile: { padding: '12px 12px', minHeight: 92 },
   metricaIcono: { fontSize: 20, lineHeight: 1 },
   metricaValor: { fontSize: 32, fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1.1 },
+  metricaValorMobile: { fontSize: 28 },
   metricaLabel: { fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', opacity: 0.8 },
+  metricaLabelMobile: { fontSize: 10, lineHeight: 1.2 },
 
   // Grilla
-  grid2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 },
+  grid2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16, minWidth: 0 },
+  grid2Mobile: { gridTemplateColumns: '1fr', gap: 12 },
+  columnStack: { display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 },
 
   // Cards
   card: {
     background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12,
     overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+    width: '100%', minWidth: 0,
   },
+  tareasCard: { marginBottom: 16 },
   cardHeader: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
     padding: '14px 18px', borderBottom: '1px solid #f0f0f0',
@@ -394,6 +570,26 @@ const s = {
     textDecoration: 'none', color: 'inherit',
   },
   filaSolicitudLeft: { display: 'flex', flexDirection: 'column', gap: 2, flex: 1 },
+
+  // Tareas
+  filaTareaLink: {
+    display: 'flex', alignItems: 'center', gap: 10,
+    padding: '10px 18px', borderBottom: '1px solid #f8f8f8',
+    textDecoration: 'none', color: 'inherit',
+  },
+  filaTareaLinkMobile: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: 8,
+    padding: '12px',
+  },
+  tareaTipo: {
+    fontSize: 11, padding: '3px 9px', borderRadius: 99, fontWeight: 700,
+    flexShrink: 0, minWidth: 104, textAlign: 'center',
+  },
+  tareaTipoMobile: { minWidth: 0, fontSize: 10, padding: '3px 7px' },
+  filaTareaInfo: { display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 },
+  tareaArrow: { color: '#aaa', fontSize: 14, flexShrink: 0 },
 
   // Fila cliente
   filaCliente: {

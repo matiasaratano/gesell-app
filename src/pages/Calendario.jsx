@@ -307,10 +307,41 @@ function diffNoches(desde, hasta) {
 
 function estadoVisualReserva(r) {
   if (!r) return 'pendiente'
+  if (r.estado === 'cerrada') return 'cerrada'
   if (r.checkout && r.checkout < hoySrt()) return 'finalizada'
   if (r.estado === 'señada' || r.estado === 'activa') return 'confirmada'
-  if (r.estado === 'cancelada' || r.estado === 'cerrada') return 'pendiente'
+  if (r.estado === 'cancelada') return 'pendiente'
   return r.estado || 'pendiente'
+}
+
+function nombreReserva(r) {
+  const cliente = `${r.clientes?.nombre || ''} ${r.clientes?.apellido || ''}`.trim()
+  if (cliente) return cliente
+  if (r.estado === 'cerrada') return tipoCierreReserva(r)
+  return 'Sin cliente'
+}
+
+function nombreCortoReserva(r) {
+  const cliente = `${r.clientes?.nombre || ''} ${r.clientes?.apellido?.[0] || ''}`.trim()
+  if (cliente) return r.clientes?.apellido ? `${r.clientes.nombre} ${r.clientes.apellido[0]}.` : r.clientes?.nombre
+  if (r.estado === 'cerrada') return tipoCierreReserva(r)
+  return 'Sin cliente'
+}
+
+function esCierreManual(r) {
+  return r?.estado === 'cerrada' && ['directo', 'manual'].includes(r.canal_origen)
+}
+
+function nombreCanal(canal) {
+  if (canal === 'booking') return 'Booking'
+  if (canal === 'airbnb') return 'Airbnb'
+  if (canal === 'directo' || canal === 'manual') return 'Manual'
+  return canal ? capitalizar(canal) : 'Manual'
+}
+
+function tipoCierreReserva(r) {
+  if (esCierreManual(r)) return 'Cierre manual'
+  return `Cierre ${nombreCanal(r?.canal_origen)}`
 }
 
 // ─── Componente ────────────────────────────────────────────────────────────────
@@ -597,11 +628,41 @@ export default function Calendario() {
 
   async function guardarBloqueo({ propiedadId, motivo }) {
     if (!rangoInicio || !rangoFin) return
-    const { error } = await supabase.from('bloqueos').insert({
+    if (!propiedadId) return { message: 'Seleccioná una propiedad.' }
+
+    const [resReservas, resBloqueos] = await Promise.all([
+      supabase
+        .from('reservas')
+        .select('id, checkin, checkout, estado, clientes(nombre, apellido)')
+        .eq('propiedad_id', propiedadId)
+        .neq('estado', 'cancelada')
+        .lt('checkin', rangoFin)
+        .gt('checkout', rangoInicio),
+      supabase
+        .from('bloqueos')
+        .select('id, fecha_inicio, fecha_fin, motivo')
+        .eq('propiedad_id', propiedadId)
+        .lt('fecha_inicio', rangoFin)
+        .gt('fecha_fin', rangoInicio),
+    ])
+
+    if (resReservas.error) return resReservas.error
+    if (resBloqueos.error && resBloqueos.error.code !== '42P01') return resBloqueos.error
+
+    if ((resReservas.data ?? []).length > 0) {
+      return { message: 'Ese rango se superpone con una reserva o cierre existente.' }
+    }
+    if ((resBloqueos.data ?? []).length > 0) {
+      return { message: 'Ese rango ya tiene un bloqueo manual anterior.' }
+    }
+
+    const { error } = await supabase.from('reservas').insert({
       propiedad_id: propiedadId,
-      fecha_inicio: rangoInicio,
-      fecha_fin:    rangoFin,
-      motivo:       motivo || null,
+      checkin: rangoInicio,
+      checkout: rangoFin,
+      estado: 'cerrada',
+      canal_origen: 'directo',
+      notas_internas: motivo?.trim() || 'Cierre manual',
     })
     if (!error) {
       await cargar()
@@ -1193,7 +1254,7 @@ export default function Calendario() {
                             e.stopPropagation()
                             setDetalle(r)
                           }}
-                          title={`${r.clientes?.nombre ?? ''} — ${r.propiedades?.nombre ?? ''}`}
+                          title={`${nombreReserva(r)} — ${r.propiedades?.nombre ?? ''}`}
                           style={{
                             width: 8,
                             height: 8,
@@ -1233,9 +1294,9 @@ export default function Calendario() {
                             fontSize: isTablet ? 9.5 : 11,
                             padding: isTablet ? '1px 4px' : '2px 6px',
                           }}
-                          title={`${r.clientes?.nombre} ${r.clientes?.apellido} — ${r.propiedades?.nombre}`}
+                          title={`${nombreReserva(r)} — ${r.propiedades?.nombre}`}
                         >
-                          {r.clientes?.nombre} {r.clientes?.apellido?.[0]}.
+                          {nombreCortoReserva(r)}
                         </button>
                       ))}
                       {dayRes.length > (isTablet ? 2 : 3) && (
@@ -1326,7 +1387,7 @@ export default function Calendario() {
                 ➕ Nueva Reserva
               </button>
             )}
-            {rangoFin && (filtro !== 'todas' || rangoPropId) && (
+            {rangoFin && (
               <button
                 style={{ ...s.btnModificar, background: '#6B4C9E' }}
                 onClick={handleCerrarNoches}
@@ -1580,6 +1641,144 @@ function IcalImportChannel({
       >
         + Agregar otro listing de {nombre}
       </button>
+    </div>
+  )
+}
+
+function ModalBloqueo({ propiedades, propFiltro, rangoInicio, rangoFin, onGuardar, onClose }) {
+  const isMobile = useIsMobile()
+  const [propiedadId, setPropiedadId] = useState(propFiltro || '')
+  const [motivo, setMotivo] = useState('Cierre manual')
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    setError('')
+    if (!propiedadId) {
+      setError('Seleccioná una propiedad.')
+      return
+    }
+    setGuardando(true)
+    const err = await onGuardar({ propiedadId, motivo })
+    setGuardando(false)
+    if (err) {
+      setError(err.message || 'No se pudieron cerrar las noches.')
+    }
+  }
+
+  const propiedad = propiedades.find(p => p.id === propiedadId)
+
+  return (
+    <div style={{ ...s.overlay, alignItems: isMobile ? 'flex-end' : 'center', padding: isMobile ? 0 : 20 }} onClick={onClose}>
+      <form
+        style={{
+          ...s.modal,
+          borderRadius: isMobile ? '16px 16px 0 0' : '16px',
+          maxWidth: 460,
+        }}
+        onSubmit={handleSubmit}
+        onClick={e => e.stopPropagation()}
+      >
+        <div style={{ ...s.modalHeader, borderLeft: '4px solid #6B4C9E' }}>
+          <div>
+            <div style={s.modalNombre}>Cerrar noches</div>
+            <div style={s.modalPropiedad}>
+              {formatFecha(rangoInicio)} al {formatFecha(rangoFin)}
+            </div>
+          </div>
+          <button style={s.closeBtn} onClick={onClose} type="button">✕</button>
+        </div>
+
+        <div style={s.modalBody}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div>
+              <div style={s.datoLabel}>Propiedad</div>
+              <select
+                style={s.inputEdit}
+                value={propiedadId}
+                onChange={e => setPropiedadId(e.target.value)}
+              >
+                <option value="">Seleccionar propiedad</option>
+                {propiedades.map(p => (
+                  <option key={p.id} value={p.id}>{p.nombre}</option>
+                ))}
+              </select>
+            </div>
+
+            {propiedad && (
+              <div style={{ fontSize: 13, color: '#666' }}>
+                Se va a guardar como reserva cerrada en {propiedad.nombre}.
+              </div>
+            )}
+
+            <div>
+              <div style={s.datoLabel}>Motivo</div>
+              <input
+                style={s.inputEdit}
+                value={motivo}
+                onChange={e => setMotivo(e.target.value)}
+                placeholder="Ej: mantenimiento, uso familiar, cierre manual"
+              />
+            </div>
+
+            {error && <div style={s.inlineError}>{error}</div>}
+          </div>
+        </div>
+
+        <div style={s.modalFooter}>
+          <button style={s.btnSecundario} onClick={onClose} type="button" disabled={guardando}>
+            Cancelar
+          </button>
+          <button style={{ ...s.btnWA, background: '#6B4C9E' }} type="submit" disabled={guardando}>
+            {guardando ? 'Guardando...' : 'Cerrar noches'}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+function ModalAbrirBloqueo({ bloqueo, propiedades, onAbrir, onClose }) {
+  const isMobile = useIsMobile()
+  const propiedad = propiedades.find(p => p.id === bloqueo.propiedad_id)
+
+  return (
+    <div style={{ ...s.overlay, alignItems: isMobile ? 'flex-end' : 'center', padding: isMobile ? 0 : 20 }} onClick={onClose}>
+      <div
+        style={{
+          ...s.modal,
+          borderRadius: isMobile ? '16px 16px 0 0' : '16px',
+          maxWidth: 420,
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div style={{ ...s.modalHeader, borderLeft: '4px solid #6B4C9E' }}>
+          <div>
+            <div style={s.modalNombre}>Bloqueo manual anterior</div>
+            <div style={s.modalPropiedad}>{propiedad?.nombre || 'Propiedad'}</div>
+          </div>
+          <button style={s.closeBtn} onClick={onClose} type="button">✕</button>
+        </div>
+        <div style={s.modalBody}>
+          <div style={s.modalGrid}>
+            <DatoModal label="Desde" value={formatFecha(bloqueo.fecha_inicio)} />
+            <DatoModal label="Hasta" value={formatFecha(bloqueo.fecha_fin)} />
+          </div>
+          {bloqueo.motivo && (
+            <div style={s.notasBox}>
+              <span style={s.notasLabel}>Motivo</span>
+              {bloqueo.motivo}
+            </div>
+          )}
+        </div>
+        <div style={s.modalFooter}>
+          <button style={s.btnSecundario} onClick={onClose} type="button">Cerrar</button>
+          <button style={{ ...s.btnSecundario, borderColor: '#991B1B', color: '#991B1B' }} onClick={onAbrir} type="button">
+            Abrir bloqueo viejo
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -1844,9 +2043,9 @@ function TimelineView({
                         height: 38,
                         alignSelf: 'center',
                       }}
-                      title={`${r.clientes?.nombre} ${r.clientes?.apellido} — ${r.propiedades?.nombre} (${formatFecha(r.checkin)} al ${formatFecha(r.checkout)})`}
+                      title={`${nombreReserva(r)} — ${r.propiedades?.nombre} (${formatFecha(r.checkin)} al ${formatFecha(r.checkout)})`}
                     >
-                      {r.clientes?.nombre} {r.clientes?.apellido?.[0]}.
+                      {nombreCortoReserva(r)}
                     </button>
                   )
                 })}
@@ -1892,6 +2091,7 @@ function ModalDetalle({ reserva: r, color, onClose, onActualizar }) {
   const [editando,        setEditando]        = useState(false)
   const [guardando,       setGuardando]       = useState(false)
   const [saveError,       setSaveError]       = useState('')
+  const [confirmarAbrir,  setConfirmarAbrir]  = useState(false)
   const [form, setForm] = useState({
     checkin:      r.checkin,
     checkout:     r.checkout,
@@ -1903,6 +2103,8 @@ function ModalDetalle({ reserva: r, color, onClose, onActualizar }) {
 
   const estadoVisual = estadoVisualReserva(r)
   const estadoInfo = ESTADO_LABEL[estadoVisual] ?? { label: r.estado, bg: '#f0f0f0', color: '#333' }
+  const tituloReserva = nombreReserva(r)
+  const cierreManual = esCierreManual(r)
   const waLink = r.clientes?.whatsapp
     ? `https://wa.me/${r.clientes.whatsapp.replace(/\D/g, '')}`
     : null
@@ -1961,6 +2163,25 @@ function ModalDetalle({ reserva: r, color, onClose, onActualizar }) {
       return
     }
 
+    const { data: bloqueadas, error: bloqueoError } = await supabase
+      .from('bloqueos')
+      .select('id, fecha_inicio, fecha_fin, motivo')
+      .eq('propiedad_id', r.propiedad_id)
+      .lt('fecha_inicio', form.checkout)
+      .gt('fecha_fin', form.checkin)
+
+    if (bloqueoError) {
+      setGuardando(false)
+      setSaveError(bloqueoError.message || 'No se pudieron validar los bloqueos manuales.')
+      return
+    }
+
+    if ((bloqueadas ?? []).length > 0) {
+      setGuardando(false)
+      setSaveError('Ese rango se superpone con noches cerradas manualmente.')
+      return
+    }
+
     const payload = {
       checkin:        form.checkin,
       checkout:       form.checkout,
@@ -1981,7 +2202,32 @@ function ModalDetalle({ reserva: r, color, onClose, onActualizar }) {
     onClose()
   }
 
+  async function abrirCierreManual() {
+    if (!cierreManual) return
+
+    setConfirmarAbrir(false)
+    setSaveError('')
+    setGuardando(true)
+    const { error } = await supabase
+      .from('reservas')
+      .delete()
+      .eq('id', r.id)
+      .eq('estado', 'cerrada')
+      .in('canal_origen', ['directo', 'manual'])
+
+    if (error) {
+      setGuardando(false)
+      setSaveError(error.message || 'No se pudo abrir el cierre manual.')
+      return
+    }
+
+    await onActualizar()
+    setGuardando(false)
+    onClose()
+  }
+
   return (
+    <>
     <div style={{ ...s.overlay, alignItems: isMobile ? 'flex-end' : 'center', padding: isMobile ? 0 : 20 }} onClick={onClose}>
       <div
         style={{
@@ -1999,7 +2245,7 @@ function ModalDetalle({ reserva: r, color, onClose, onActualizar }) {
         <div style={{ ...s.modalHeader, borderLeft: `4px solid ${color}`, flexShrink: 0 }}>
           <div>
             <div style={s.modalNombre}>
-              {r.clientes?.nombre} {r.clientes?.apellido}
+              {tituloReserva}
             </div>
             <div style={s.modalPropiedad}>{r.propiedades?.nombre}</div>
           </div>
@@ -2027,13 +2273,20 @@ function ModalDetalle({ reserva: r, color, onClose, onActualizar }) {
                 <DatoModal label="Total" value={r.precio_total ? `$${Number(r.precio_total).toLocaleString('es-AR')}` : '—'} highlight />
                 {r.clientes?.dni      && <DatoModal label="DNI"       value={r.clientes.dni} />}
                 {r.clientes?.whatsapp && <DatoModal label="WhatsApp"  value={r.clientes.whatsapp} />}
-                <DatoModal label="Canal" value={r.canal_origen ? capitalizar(r.canal_origen) : '—'} />
+                {r.estado === 'cerrada' && <DatoModal label="Tipo de cierre" value={tipoCierreReserva(r)} highlight />}
+                <DatoModal label="Canal" value={nombreCanal(r.canal_origen)} />
               </div>
 
               {r.notas_internas && (
                 <div style={s.notasBox}>
                   <span style={s.notasLabel}>Notas</span>
                   {r.notas_internas}
+                </div>
+              )}
+
+              {saveError && (
+                <div style={s.inlineError}>
+                  {saveError}
                 </div>
               )}
             </>
@@ -2153,7 +2406,7 @@ function ModalDetalle({ reserva: r, color, onClose, onActualizar }) {
               </a>
             )}
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             {editando ? (
               <>
                 <button style={s.btnSecundario} onClick={() => setEditando(false)} disabled={guardando}>
@@ -2169,6 +2422,15 @@ function ModalDetalle({ reserva: r, color, onClose, onActualizar }) {
               </>
             ) : (
               <>
+                {cierreManual && (
+                  <button
+                    style={{ ...s.btnSecundario, borderColor: '#B91C1C', color: '#B91C1C', opacity: guardando ? 0.7 : 1 }}
+                    onClick={() => setConfirmarAbrir(true)}
+                    disabled={guardando}
+                  >
+                    {guardando ? 'Abriendo…' : 'Abrir cierre manual'}
+                  </button>
+                )}
                 <button
                   style={{ ...s.btnSecundario, borderColor: '#2d5a3d', color: '#2d5a3d' }}
                   onClick={() => setEditando(true)}
@@ -2179,6 +2441,73 @@ function ModalDetalle({ reserva: r, color, onClose, onActualizar }) {
               </>
             )}
           </div>
+        </div>
+      </div>
+    </div>
+    {confirmarAbrir && (
+      <ConfirmDialog
+        title="Abrir cierre manual"
+        body="Se va a eliminar solamente este cierre creado en la app. Las reservas reales y los cierres importados no se tocan."
+        confirmLabel="Abrir cierre"
+        cancelLabel="Cancelar"
+        danger
+        onConfirm={abrirCierreManual}
+        onCancel={() => setConfirmarAbrir(false)}
+      />
+    )}
+    </>
+  )
+}
+
+function ConfirmDialog({ title, body, confirmLabel, cancelLabel, danger = false, onConfirm, onCancel }) {
+  const isMobile = useIsMobile()
+
+  return (
+    <div
+      style={{
+        ...s.overlay,
+        zIndex: 2000,
+        alignItems: isMobile ? 'flex-end' : 'center',
+        padding: isMobile ? 0 : 20,
+        background: 'rgba(0,0,0,0.42)',
+      }}
+      onClick={onCancel}
+    >
+      <div
+        style={{
+          ...s.modal,
+          maxWidth: 420,
+          borderRadius: isMobile ? '16px 16px 0 0' : 16,
+          boxShadow: isMobile ? '0 -8px 40px rgba(0,0,0,0.18)' : '0 14px 45px rgba(0,0,0,0.2)',
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div style={{ ...s.modalHeader, borderLeft: `4px solid ${danger ? '#B91C1C' : '#2d5a3d'}` }}>
+          <div>
+            <div style={s.modalNombre}>{title}</div>
+            <div style={s.modalPropiedad}>Confirmar acción</div>
+          </div>
+          <button style={s.closeBtn} onClick={onCancel} type="button">✕</button>
+        </div>
+        <div style={s.modalBody}>
+          <p style={{ margin: 0, color: '#555', fontSize: 14, lineHeight: 1.5 }}>
+            {body}
+          </p>
+        </div>
+        <div style={s.modalFooter}>
+          <button style={s.btnSecundario} onClick={onCancel} type="button">
+            {cancelLabel}
+          </button>
+          <button
+            style={{
+              ...s.btnWA,
+              background: danger ? '#B91C1C' : '#2d5a3d',
+            }}
+            onClick={onConfirm}
+            type="button"
+          >
+            {confirmLabel}
+          </button>
         </div>
       </div>
     </div>
@@ -2260,14 +2589,14 @@ function ModalDiaReservas({ dia, onClose, onVerDetalle, propColor }) {
               }} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 600, fontSize: 14, color: '#1a1a1a' }}>
-                  {r.clientes?.nombre} {r.clientes?.apellido}
+                  {nombreReserva(r)}
                 </div>
                 <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
                   {r.propiedades?.nombre}
                 </div>
               </div>
               <div style={{ fontSize: 12, color: '#666' }}>
-                {ESTADO_LABEL[estadoVisualReserva(r)]?.label || r.estado}
+                {r.estado === 'cerrada' ? tipoCierreReserva(r) : (ESTADO_LABEL[estadoVisualReserva(r)]?.label || r.estado)}
               </div>
             </button>
           ))}

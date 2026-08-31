@@ -108,18 +108,28 @@ export default function NuevaReserva({ onExito }) {
     if (checkout <= checkin) return setDispError('El check-out debe ser posterior al check-in.')
 
     setCheckingDisp(true)
-    const { data: conflictos, error } = await supabase
-      .from('reservas')
-      .select('id, checkin, checkout, clientes(nombre, apellido)')
-      .eq('propiedad_id', propId)
-      .neq('estado', 'cancelada')
-      .lt('checkin', checkout)  // comienza antes de que termine la nueva
-      .gt('checkout', checkin)  // termina después de que empiece la nueva
+    const [resReservas, resBloqueos] = await Promise.all([
+      supabase
+        .from('reservas')
+        .select('id, checkin, checkout, clientes(nombre, apellido)')
+        .eq('propiedad_id', propId)
+        .neq('estado', 'cancelada')
+        .lt('checkin', checkout)  // comienza antes de que termine la nueva
+        .gt('checkout', checkin), // termina después de que empiece la nueva
+      supabase
+        .from('bloqueos')
+        .select('id, fecha_inicio, fecha_fin, motivo')
+        .eq('propiedad_id', propId)
+        .lt('fecha_inicio', checkout)
+        .gt('fecha_fin', checkin),
+    ])
 
     setCheckingDisp(false)
 
-    if (error) return setDispError('Error verificando disponibilidad.')
+    if (resReservas.error) return setDispError('Error verificando disponibilidad.')
+    if (resBloqueos.error) return setDispError('Error verificando bloqueos manuales.')
 
+    const conflictos = resReservas.data ?? []
     if (conflictos && conflictos.length > 0) {
       const c = conflictos[0]
       const nombreCliente = c.clientes?.nombre
@@ -127,6 +137,14 @@ export default function NuevaReserva({ onExito }) {
         : 'otro huésped / fecha bloqueada'
       return setDispError(
         `Sin disponibilidad: existe una reserva de ${nombreCliente} del ${formatFecha(c.checkin)} al ${formatFecha(c.checkout)}.`
+      )
+    }
+
+    const bloqueos = resBloqueos.data ?? []
+    if (bloqueos.length > 0) {
+      const b = bloqueos[0]
+      return setDispError(
+        `Sin disponibilidad: esas fechas están cerradas manualmente del ${formatFecha(b.fecha_inicio)} al ${formatFecha(b.fecha_fin)}${b.motivo ? ` (${b.motivo})` : ''}.`
       )
     }
 

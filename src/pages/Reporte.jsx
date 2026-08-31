@@ -134,14 +134,30 @@ export default function Reportes() {
     return Math.max(0, Math.round((new Date(yb, mb - 1, db) - new Date(ya, ma - 1, da)) / 86400000))
   }
 
+  function calcNochesReserva(checkin, checkout) {
+    if (!checkin || !checkout) return 0
+    const [ya, ma, da] = checkin.split('-').map(Number)
+    const [yb, mb, db] = checkout.split('-').map(Number)
+    return Math.max(0, Math.round((new Date(yb, mb - 1, db) - new Date(ya, ma - 1, da)) / 86400000))
+  }
+
+  function ingresoEnPeriodo(r) {
+    const precio = Number(r.precio_total || 0)
+    if (!precio) return 0
+    const nochesPeriodo = calcNochesEnPeriodo(r.checkin, r.checkout, desde, hasta)
+    const nochesReserva = r.noches || calcNochesReserva(r.checkin, r.checkout)
+    if (!nochesReserva || nochesPeriodo >= nochesReserva) return precio
+    return Math.round(precio * (nochesPeriodo / nochesReserva))
+  }
+
   const nochesOcupadas = reales.reduce((acc, r) => {
     return acc + calcNochesEnPeriodo(r.checkin, r.checkout, desde, hasta)
   }, 0)
 
   const ocupacion = diasDisponibles > 0 ? Math.min(100, Math.round((nochesOcupadas / diasDisponibles) * 100)) : 0
 
-  const totalIngresos  = reales.reduce((acc, r) => acc + (r.precio_total ?? 0), 0)
-  const totalNoches    = reales.reduce((acc, r) => acc + (r.noches ?? 0), 0)
+  const totalIngresos  = reales.reduce((acc, r) => acc + ingresoEnPeriodo(r), 0)
+  const totalNoches    = nochesOcupadas
   const ticketPromedio = reales.length > 0 ? Math.round(totalIngresos / reales.length) : 0
   const nocheProm      = reales.length > 0 && totalNoches > 0
     ? Math.round(totalIngresos / totalNoches) : 0
@@ -152,7 +168,7 @@ export default function Reportes() {
   // Por propiedad (acotado al período)
   const porProp = propiedades.map(p => {
     const rs = reales.filter(r => r.propiedad_id === p.id)
-    const ing = rs.reduce((a, r) => a + (r.precio_total ?? 0), 0)
+    const ing = rs.reduce((a, r) => a + ingresoEnPeriodo(r), 0)
     const noches = rs.reduce((a, r) => a + calcNochesEnPeriodo(r.checkin, r.checkout, desde, hasta), 0)
     const ocp = diasPeriodo > 0 ? Math.min(100, Math.round((noches / diasPeriodo) * 100)) : 0
     return { ...p, reservas: rs.length, ingresos: ing, noches, ocupacion: ocp }
@@ -232,7 +248,7 @@ export default function Reportes() {
         <Metrica label="Reservas" valor={reales.length} sub={`${canceladas.length} canceladas`} color="#2d5a3d" bg="#e8f0eb" />
         <Metrica label="Ocupación" valor={`${ocupacion}%`} sub={`${nochesOcupadas} de ${diasDisponibles} noches`} color="#1E40AF" bg="#DBEAFE" />
         <Metrica label="Ingresos totales" valor={fmtPesos(totalIngresos)} sub={totalNoches > 0 ? `${fmtPesos(nocheProm)}/noche` : ''} color="#065F46" bg="#D1FAE5" grande />
-        <Metrica label="Ticket promedio" valor={fmtPesos(ticketPromedio)} sub={`${totalNoches} noches totales`} color="#374151" bg="#F3F4F6" />
+        <Metrica label="Ticket promedio" valor={fmtPesos(ticketPromedio)} sub={`${totalNoches} noches del período`} color="#374151" bg="#F3F4F6" />
       </div>
 
       {pendientes.length > 0 && (
