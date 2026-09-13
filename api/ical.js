@@ -26,7 +26,7 @@ export default async function handler(req, res) {
   try {
     const text = await fetchIcalUpstream(url)
     res.setHeader('Content-Type', 'text/calendar; charset=utf-8')
-    res.setHeader('Cache-Control', 'private, max-age=120')
+    res.setHeader('Cache-Control', 'no-store')
     return res.status(200).send(text)
   } catch (e) {
     const status = e.status && e.status >= 400 && e.status < 600 ? e.status : 502

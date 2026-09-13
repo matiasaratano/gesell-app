@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useSearchParams } from 'react-router-dom'
+import CobrosReserva from '../components/CobrosReserva'
 
 const SECCIONES = [
   { id: 'propiedades', label: '🏠 Propiedades' },
@@ -826,6 +827,10 @@ function CRUDReservas() {
           coloresEstado={COLORES_ESTADO}
           onClose={() => setDetalle(null)}
           onEditar={() => { setEditando({ ...detalle }); setDetalle(null) }}
+          onPago={(estado) => {
+            if (estado) setDetalle(prev => ({ ...prev, estado }))
+            cargar()
+          }}
           onCambiarEstado={async (nuevoEstado) => {
             if (nuevoEstado === 'eliminar') {
               await supabase.from('pagos').delete().eq('reserva_id', detalle.id)
@@ -846,7 +851,7 @@ function CRUDReservas() {
   )
 }
 
-function ModalDetalleReserva({ reserva: r, propiedades, estados, estadoLabels, coloresEstado, onClose, onEditar, onCambiarEstado }) {
+function ModalDetalleReserva({ reserva: r, propiedades, estados, estadoLabels, coloresEstado, onClose, onEditar, onCambiarEstado, onPago }) {
   const waLink = r.clientes?.whatsapp
     ? `https://wa.me/${r.clientes.whatsapp.replace(/\D/g, '')}`
     : null
@@ -893,6 +898,7 @@ function ModalDetalleReserva({ reserva: r, propiedades, estados, estadoLabels, c
           )}
 
           <div style={s.estadosSection}>
+            {r.estado !== 'cerrada' && <CobrosReserva key={`${r.id}-${r.estado}`} reserva={r} onChange={onPago} />}
             <div style={s.estadosLabel}>Cambiar estado</div>
             <div style={s.estadosBtns}>
               {estados.map(est => {

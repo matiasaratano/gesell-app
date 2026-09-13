@@ -7,6 +7,7 @@ import NuevaReserva from './pages/NuevaReserva'
 import GeneradorMensajes from './pages/GeneradorMensajes'
 import Recibos from './pages/Recibos'
 import Admin from './pages/Admin'
+import Cobros from './pages/Cobros'
 
 function Toast({ msg, onClose }) {
   useEffect(() => {
@@ -33,6 +34,7 @@ function Nav() {
   const links = [
     { to: '/', label: '🏠 Inicio' },
     { to: '/calendario', label: '📅 Calendario' },
+    { to: '/cobros', label: '💰 Señas y cobros' },
     { to: '/nueva', label: '➕ Nueva reserva' },
     { to: '/mensajes', label: '💬 Mensajes' },
     { to: '/recibos', label: '📄 Recibos' },
@@ -76,6 +78,7 @@ export default function App() {
         <Route path="/mensajes" element={<GeneradorMensajes />} />
         <Route path="/recibos" element={<Recibos />} />
         <Route path="/admin" element={<Admin />} />
+        <Route path="/cobros" element={<Cobros />} />
         <Route path="/reporte" element={<Reporte />} />
       </Routes>
       <Toast msg={toastMsg} onClose={() => setToastMsg('')} />

@@ -88,15 +88,17 @@ function buildTareas(reservas = []) {
       })
     }
 
-    if (r.estado === 'pendiente') {
+    const tienePago = r.pagos?.some(p => p.confirmado && Number(p.monto) > 0)
+    if (!tienePago && r.requiere_sena !== false) {
       tareas.push({
         id: `${r.id}-confirmar`,
         reservaId: r.id,
-        tipo: 'Confirmar seña',
+        tipo: 'Sin seña registrada',
+        enlace: `/cobros?reserva_id=${r.id}`,
         titulo: reservaNombre(r),
         detalle: esBooking
-          ? `${fechas} · si paga por fuera, pasar a confirmada`
-          : `${fechas} · pasar a confirmada cuando pague`,
+          ? `${fechas} · revisar condiciones de cobro de Booking`
+          : `${fechas} · registrar cuando recibas el pago`,
         color: '#6B21A8',
         bg: '#F3E8FF',
       })
@@ -224,7 +226,7 @@ export default function Dashboard() {
 
         // Tareas operativas sobre reservas actuales/futuras
         supabase.from('reservas')
-          .select('id, cliente_id, checkin, checkout, precio_total, estado, canal_origen, notas_internas, clientes(nombre, apellido), propiedades(nombre)')
+          .select('*, clientes(nombre, apellido), propiedades(nombre), pagos(monto, confirmado)')
           .gte('checkout', hoy)
           .not('estado', 'in', '("cancelada","cerrada","finalizada")')
           .order('checkin', { ascending: true })
@@ -472,7 +474,7 @@ function Vacio({ texto }) {
 function FilaTarea({ tarea: t, compact = false }) {
   return (
     <Link
-      to={`/admin?seccion=reservas&reserva_id=${t.reservaId}`}
+      to={t.enlace || `/admin?seccion=reservas&reserva_id=${t.reservaId}`}
       style={{ ...s.filaTareaLink, ...(compact ? s.filaTareaLinkMobile : {}) }}
       className="fila-clickeable"
     >
