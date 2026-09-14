@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+import { supabase, supabaseAutomatico } from '../lib/supabase'
+import PendientesLimpieza from '../components/PendientesLimpieza'
 
 // ─── Utilidades de fecha ──────────────────────────────────────────────────────
 function padZ(n) { return String(n).padStart(2, '0') }
@@ -116,8 +117,8 @@ function buildTareas(reservas = []) {
       })
     }
 
-    return tareas
-  }).slice(0, 12)
+    return tareas.map(t => ({ ...t, pospuestaHasta: r.recordar_el || null }))
+  })
 }
 
 // ─── Colores de estado ────────────────────────────────────────────────────────
@@ -166,6 +167,8 @@ export default function Dashboard() {
   const [salen,      setSalen]      = useState([])
   const [solicitudes,setSolicitudes] = useState([])
   const [tareas,     setTareas]     = useState([])
+  const [verPospuestas, setVerPospuestas] = useState(false)
+  const [errorTarea, setErrorTarea] = useState('')
   const [propiedades,setPropiedades] = useState([])
   const [loading,    setLoading]    = useState(true)
 
@@ -184,7 +187,7 @@ export default function Dashboard() {
 
       // Automatización: Finalizar reservas cuya fecha de checkout ya pasó
       // (excluye 'cerrada' para no tocar bloqueos de plataforma)
-      await supabase
+      await supabaseAutomatico
         .from('reservas')
         .update({ estado: 'finalizada' })
         .lt('checkout', hoy)
@@ -247,6 +250,14 @@ export default function Dashboard() {
   }
 
   const alojadasReales = alojadas.filter(r => r.estado !== 'cerrada')
+  const tareasVisibles = tareas.filter(t => (t.pospuestaHasta > hoyStr()) === verPospuestas)
+  async function posponer(reservaId, fecha) {
+    setErrorTarea('')
+    const { data, error } = await supabase.from('reservas').update({ recordar_el: fecha || null }).eq('id', reservaId).select('id').single()
+    if (error || !data) { setErrorTarea('No se pudo guardar el recordatorio.'); return false }
+    setTareas(prev => prev.map(t => t.reservaId === reservaId ? { ...t, pospuestaHasta: fecha || null } : t))
+    return true
+  }
   const cerradasAhora = alojadas.filter(r => r.estado === 'cerrada')
 
   return (
@@ -309,11 +320,14 @@ export default function Dashboard() {
             />
           </div>
 
-          <Seccion titulo="Tareas para ordenar" badge={tareas.length} style={s.tareasCard}>
-            {tareas.length === 0 ? (
-              <Vacio texto="No hay reservas futuras con datos pendientes" />
+          <PendientesLimpieza />
+          <Seccion titulo="Tareas para ordenar" badge={tareasVisibles.length} style={s.tareasCard}>
+            <div className="cobros"><div className="cobros-tabs"><button aria-pressed={!verPospuestas} onClick={() => setVerPospuestas(false)}>Pendientes</button><button aria-pressed={verPospuestas} onClick={() => setVerPospuestas(true)}>Pospuestas</button></div></div>
+            {errorTarea && <p role="alert">{errorTarea}</p>}
+            {tareasVisibles.length === 0 ? (
+              <Vacio texto={verPospuestas ? 'No hay tareas pospuestas' : 'No hay tareas para atender ahora'} />
             ) : (
-              tareas.map(t => <FilaTarea key={t.id} tarea={t} compact={isMobile} />)
+              tareasVisibles.map(t => <FilaTarea key={t.id} tarea={t} compact={isMobile} onPosponer={posponer} />)
             )}
           </Seccion>
 
@@ -338,7 +352,7 @@ export default function Dashboard() {
                   solicitudes.map(r => (
                     <Link
                       key={r.id}
-                      to={`/admin?seccion=reservas&reserva_id=${r.id}`}
+                      to={`/reservas/${r.id}`}
                       style={s.filaSolicitudLink}
                       className="fila-clickeable"
                     >
@@ -432,7 +446,7 @@ function FilaReserva({ reserva: r, mostrarProp }) {
 
   return (
     <Link 
-      to={`/admin?seccion=reservas&reserva_id=${r.id}`} 
+      to={`/reservas/${r.id}`}
       style={s.filaReservaLink}
       className="fila-clickeable"
     >
@@ -471,10 +485,20 @@ function Vacio({ texto }) {
   )
 }
 
-function FilaTarea({ tarea: t, compact = false }) {
+function FilaTarea({ tarea: t, compact = false, onPosponer }) {
+  const [fecha, setFecha] = useState(t.pospuestaHasta || '')
+  const [abierto, setAbierto] = useState(false)
+  const [guardando, setGuardando] = useState(false)
+  async function guardar(value) {
+    setGuardando(true)
+    const ok = await onPosponer(t.reservaId, value)
+    setGuardando(false)
+    if (ok) setAbierto(false)
+  }
   return (
+    <div>
     <Link
-      to={t.enlace || `/admin?seccion=reservas&reserva_id=${t.reservaId}`}
+      to={`/reservas/${t.reservaId}`}
       style={{ ...s.filaTareaLink, ...(compact ? s.filaTareaLinkMobile : {}) }}
       className="fila-clickeable"
     >
@@ -487,6 +511,11 @@ function FilaTarea({ tarea: t, compact = false }) {
       </div>
       <span style={s.tareaArrow}>→</span>
     </Link>
+    <div className="cobros tarea-posponer">
+      {t.pospuestaHasta > hoyStr() && <small>Recordar el {t.pospuestaHasta.split('-').reverse().join('/')}</small>}
+      {abierto ? <div className="cobros-acciones"><label>Fecha del recordatorio<input type="date" min={hoyStr()} value={fecha} onChange={e => setFecha(e.target.value)} /></label><button disabled={guardando || !fecha || fecha < hoyStr()} onClick={() => guardar(fecha)}>Guardar fecha</button><button disabled={guardando} onClick={() => setAbierto(false)}>Cancelar</button></div> : <div className="cobros-acciones"><button onClick={() => setAbierto(true)}>Posponer reserva</button>{t.pospuestaHasta && <button disabled={guardando} onClick={() => guardar(null)}>Reactivar</button>}</div>}
+    </div>
+    </div>
   )
 }
 

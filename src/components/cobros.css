@@ -1,7 +1,8 @@
 .cobros { color: #252525; letter-spacing: 0; min-width: 0; }
 .cobros h1 { font-size: 26px; margin: 0 0 20px; }
 .cobros h3 { font-size: 18px; margin: 16px 0; }
-.cobros button, .cobros input, .cobros select, .cobros-link { font: inherit; min-height: 44px; border-radius: 6px; border: 1px solid #cbd0d5; padding: 10px 12px; background: white; color: #252525; box-sizing: border-box; max-width: 100%; }
+.cobros button, .cobros input, .cobros select, .cobros-link { font: inherit; min-height: 44px; border-radius: 8px; border: 1px solid #ddd; padding: 9px 12px; background: white; color: #252525; box-sizing: border-box; max-width: 100%; }
+.cobros button, .cobros-link { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 18px; font-size: 14px; font-weight: 500; line-height: 1.4; text-align: center; text-decoration: none; transition: background-color .15s, border-color .15s; -webkit-tap-highlight-color: transparent; }
 .cobros button { cursor: pointer; }
 .cobros button:disabled { opacity: .55; cursor: default; }
 .cobros :focus-visible { outline: 3px solid #2581b5; outline-offset: 2px; }
@@ -10,7 +11,7 @@
 .cobros label { display: grid; gap: 6px; font-size: 14px; }
 .cobros input, .cobros select { width: 100%; font-size: 16px; }
 .cobros-tabs, .cobros-acciones { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
-.cobros-tabs button[aria-pressed="true"], .cobros .cobros-primary { background: #286344; color: white; border-color: #286344; }
+.cobros .cobros-primary { background: #2d5a3d; color: white; border-color: #2d5a3d; font-weight: 600; }
 .cobros-totales { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 16px 0; border-block: 1px solid #e1e4e7; }
 .cobros small { display: block; color: #626970; margin-bottom: 5px; font-size: 12px; }
 .cobros strong { overflow-wrap: anywhere; }
@@ -24,6 +25,19 @@
 .cobros-check input { width: 20px; min-height: 20px; height: 20px; }
 .cobros form > button { margin-top: 12px; }
 .cobros-link { display: inline-flex; align-items: center; text-decoration: none; }
+.ficha-titulo { margin-top: 20px !important; }
+.ficha-datos { padding-top: 24px; }
+.ficha-datos dl { display: grid; grid-template-columns: minmax(100px, 1fr) 2fr; gap: 12px; margin-bottom: 20px; }
+.ficha-datos dt { color: #637068; }
+.ficha-datos section, .ficha-mensaje { padding: 18px 0; border-top: 1px solid #dde5df; }
+.ficha-notas { white-space: pre-wrap; overflow-wrap: anywhere; margin: 14px 0; }
+.limpieza-panel { margin: 20px 0; padding: 16px 0; border-block: 1px solid #d9e2dc; }
+.tarea-posponer { padding: 0 16px 10px; border-bottom: 1px solid #e5e9e6; }
+.tarea-posponer .cobros-acciones { align-items: end; margin: 8px 0; }
+.pago-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.cobros-meses { margin: 18px 0; padding: 12px 0; border-bottom: 1px solid #dde5df; }
+.cobros-meses p { display: flex; justify-content: space-between; gap: 12px; }
+.cobros textarea { width: 100%; padding: 12px; font: inherit; font-size: 16px; line-height: 1.5; border: 1px solid #ddd; border-radius: 8px; resize: vertical; }
 .cobros-page { background: #fff; min-height: calc(100vh - 70px); padding: 32px; }
 .cobros-page h1 { color: #284c37; font-size: 28px; font-weight: 650; padding-bottom: 20px; border-bottom: 1px solid #e4e8e5; margin-bottom: 24px; }
 .cobros h2.cobros-cliente { margin: 22px 0 8px; font-size: 22px; line-height: 1.3; overflow-wrap: anywhere; }
@@ -31,12 +45,19 @@
 .cobros-page > p { margin: 6px 0; color: #5c6561; }
 .cobros-filtros { padding: 0 0 20px; border-bottom: 1px solid #e4e8e5; }
 .cobros label { font-weight: 550; color: #49564f; }
-.cobros input, .cobros select { margin-top: 2px; background-color: #fff; border-color: #cbd5cf; font-weight: 400; }
-.cobros button:hover:not(:disabled), .cobros-link:hover { background-color: #eef4f0; border-color: #849b8b; text-decoration: none; }
-.cobros .cobros-primary:hover:not(:disabled), .cobros-tabs button[aria-pressed="true"]:hover { background: #214e36; color: #fff; }
+.cobros input, .cobros select { min-width: 0; margin-top: 2px; background-color: #fff; border-color: #ddd; font-weight: 400; }
+.cobros button:hover:not(:disabled), .cobros-link:hover { background-color: #f5f5f5; border-color: #aaa; text-decoration: none; }
+.cobros .cobros-primary:hover:not(:disabled) { background: #244a32; border-color: #244a32; color: #fff; }
+.cobros .cobros-danger { color: #991b1b; border-color: #fca5a5; }
+.cobros .cobros-danger:hover:not(:disabled) { color: #991b1b; background: #fff1f1; border-color: #dc7777; }
 .cobros-tabs { gap: 0; border-bottom: 1px solid #dde5df; margin: 0; }
 .cobros-tabs button { border: 0; border-radius: 0; border-bottom: 3px solid transparent; background: transparent; padding: 14px 16px; color: #64716a; }
-.cobros-tabs button[aria-pressed="true"] { background: #f0f6f2; border-bottom-color: #286344; color: #245839; }
+.cobros-tabs button[aria-pressed="true"], .cobros-tabs button[aria-pressed="true"]:hover { background: #e8f0eb; border-bottom-color: #2d5a3d; color: #2d5a3d; }
+.cobros-tabs button:hover:not(:disabled) { border-bottom-color: #aaa; }
+.cobros-tabs button[aria-pressed="true"]:hover:not(:disabled) { border-bottom-color: #2d5a3d; }
+.ficha-datos label { max-width: 320px; }
+.ficha-datos dd, .cobros-historial > li > div { min-width: 0; overflow-wrap: anywhere; }
+.cobros-check input { flex: 0 0 20px; accent-color: #2d5a3d; }
 .cobros-resumen-lista { display: flex; justify-content: space-between; gap: 12px; padding: 20px 0; color: #5b6760; font-size: 14px; flex-wrap: wrap; }
 .cobros-resumen-lista strong { margin-left: 8px; color: #285f42; font-size: 18px; }
 .cobros-lista > li { padding: 22px 0; align-items: center; }
@@ -61,6 +82,7 @@
 .cobros-sin-sena { color: #4b6079; background: #edf1f6; border-left: 3px solid #8095b0; padding: 12px 16px; margin: 12px 0; }
 .cobros [role="status"] { color: #286344; margin: 12px 0; }
 @media (max-width: 600px) {
+  .pago-fields { grid-template-columns: 1fr; }
   .cobros-page { padding: 20px 14px 48px; }
   .cobros-filtros { grid-template-columns: 1fr; }
   .cobros-lista > li { align-items: stretch; flex-direction: column; gap: 8px; }
@@ -78,4 +100,7 @@
   .cobros-section-heading { align-items: flex-start; }
   .cobros-section-heading button { width: 100%; }
   .cobros-condiciones { padding: 14px; }
+  .cobros-acciones > button, .cobros-acciones > .cobros-link { flex: 1 1 140px; }
+  .tarea-posponer .cobros-acciones > label { flex: 1 1 100%; min-width: 0; }
+  .limpieza-panel .cobros-historial > li > button { width: 100%; }
 }

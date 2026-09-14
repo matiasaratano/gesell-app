@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { dinero, parseImporte, resumenCobros } from '../lib/cobros'
 import './cobros.css'
+import PagoFields from './PagoFields'
+import { datosPago, pagoVacio, mensualidades } from '../lib/operacion-reserva.js'
 
 export default function CobrosReserva({ reserva, onChange }) {
   const [pagos, setPagos] = useState([])
@@ -9,7 +11,9 @@ export default function CobrosReserva({ reserva, onChange }) {
   const [cargaFallida, setCargaFallida] = useState(false)
   const [error, setError] = useState('')
   const [mensaje, setMensaje] = useState('')
-  const [monto, setMonto] = useState('')
+  const [pago, setPago] = useState(() => pagoVacio(reserva.modalidad === 'mensual' ? 'mensualidad' : reserva.requiere_sena === false ? 'saldo' : 'seña'))
+  const pagoIdRef = useRef(crypto.randomUUID())
+  const [modalidad, setModalidad] = useState(reserva.modalidad || 'temporal')
   const [guardando, setGuardando] = useState(false)
   const [confirmar, setConfirmar] = useState(false)
   const [anular, setAnular] = useState(null)
@@ -45,7 +49,7 @@ export default function CobrosReserva({ reserva, onChange }) {
     setError('')
     setMensaje('')
     try {
-      const campos = { precio_total: total }
+      const campos = { precio_total: total, modalidad }
       if (Object.hasOwn(reserva, 'requiere_sena') || sinSena !== !resumen.requiereSena) campos.requiere_sena = !sinSena
       const { data, error: err } = await supabase.from('reservas')
         .update(campos).eq('id', reserva.id).select('*').single()
@@ -63,35 +67,27 @@ export default function CobrosReserva({ reserva, onChange }) {
   }
   async function guardar(e) {
     e.preventDefault()
-    const importe = parseImporte(monto)
     if (ocupado.current || cargando) return
-    if (!Number.isFinite(importe) || importe <= 0 || Math.abs(importe * 100 - Math.round(importe * 100)) > 0.00001) {
-      setError('Ingresá un importe mayor a cero, con hasta dos decimales.')
-      return
-    }
     ocupado.current = true
     setGuardando(true)
     setError('')
     setMensaje('')
     try {
-      const { data, error: err } = await supabase.from('pagos').insert({
-        reserva_id: reserva.id, tipo: 'seña', monto: importe, confirmado: true,
-      }).select('*').single()
+      const payload = datosPago(pago, pagoIdRef.current)
+      const { data, error: err } = await supabase.rpc('registrar_cobro', { p_reserva: reserva.id, p_pago: payload, p_confirmar: confirmar })
       if (err) throw err
-      setPagos(prev => [...prev, data])
-      setMonto('')
-      setMensaje('Seña registrada.')
+      setPagos(prev => [...prev.filter(p => p.id !== data.id), data])
+      pagoIdRef.current = crypto.randomUUID()
+      setPago(prev => ({ ...prev, monto: '' }))
+      setMensaje('Pago registrado.')
       let nuevoEstado
       if (confirmar && estado === 'pendiente') {
-        const { data: actualizada, error: estadoError } = await supabase.from('reservas').update({ estado: 'confirmada' })
-          .eq('id', reserva.id).eq('estado', 'pendiente').select('id').maybeSingle()
-        if (estadoError || !actualizada) setError('La seña se guardó, pero no se pudo confirmar la reserva. No vuelvas a cargar el pago.')
-        else { setEstado('confirmada'); nuevoEstado = 'confirmada' }
+        setEstado('confirmada'); nuevoEstado = 'confirmada'
       }
       setConfirmar(false)
       onChange?.(nuevoEstado)
     } catch (err) {
-      setError('No se pudo registrar la seña. ' + err.message)
+      setError('No se pudo registrar el pago. ' + err.message)
     } finally {
       ocupado.current = false
       setGuardando(false)
@@ -130,6 +126,7 @@ export default function CobrosReserva({ reserva, onChange }) {
     {error && <p className="cobros-error" role="alert">{error}</p>}
     {mensaje && <p role="status">{mensaje}</p>}
     {editandoCondiciones && <form className="cobros-condiciones" onSubmit={guardarCondiciones}>
+      <label>Tipo de alquiler<select value={modalidad} disabled={guardando} onChange={e => { setModalidad(e.target.value); if (e.target.value === 'mensual') setSinSena(true) }}><option value="temporal">Temporal</option><option value="mensual">Alquiler largo / mensual</option></select></label>
       <label>Precio total de toda la estadía<input required inputMode="decimal" value={precio} onChange={e => setPrecio(e.target.value)} disabled={guardando} /></label>
       <label className="cobros-check"><input type="checkbox" checked={sinSena} onChange={e => setSinSena(e.target.checked)} disabled={guardando} />No requiere seña</label>
       <div className="cobros-acciones"><button className="cobros-primary" disabled={guardando}>{guardando ? 'Guardando…' : 'Guardar condiciones'}</button><button type="button" disabled={guardando} onClick={() => setEditandoCondiciones(false)}>Cancelar</button></div>
@@ -145,18 +142,20 @@ export default function CobrosReserva({ reserva, onChange }) {
       {resumen.excedente > 0 && <p className="cobros-aviso">Cobrado de más: {dinero(resumen.excedente)}</p>}
       <ul className="cobros-historial">
         {pagos.filter(p => Number(p.monto) > 0).map(p => <li key={p.id}>
-          <span>{p.tipo || 'Pago'} · <strong>{dinero(p.monto)}</strong><small>{p.confirmado ? 'Registrado' : 'No contabilizado'}</small></span>
-          {p.confirmado && <button type="button" disabled={guardando} onClick={() => setAnular(p.id)}>Anular registro</button>}
+          <span>{p.tipo || 'Pago'} · <strong>{dinero(p.monto)}</strong><small>{p.fecha_recibido?.slice(0, 10).split('-').reverse().join('/') || 'Sin fecha registrada'} · {p.metodo || 'Sin medio'}{p.periodo_mes ? ` · Mes ${p.periodo_mes.slice(0, 7)}` : ''} · {p.confirmado ? 'Registrado' : 'No contabilizado'}</small></span>
+          {p.confirmado && <button className="cobros-danger" type="button" disabled={guardando} onClick={() => setAnular(p.id)}>Anular registro</button>}
         </li>)}
       </ul>
+      {mensualidades(pagos).length > 0 && <div className="cobros-meses"><h3>Mensualidades recibidas</h3>{mensualidades(pagos).map(([mes, monto]) => <p key={mes}>{mes.split('-').reverse().join('/')} <strong>{dinero(monto)}</strong></p>)}</div>}
       {anular && <div className="cobros-aviso" role="group" aria-label="Confirmar anulación">
         <p>¿Anular este registro? Se descontará del recibido. Esto no devuelve dinero al cliente.</p>
-        <div className="cobros-acciones"><button disabled={guardando} onClick={anularPago}>Anular registro</button><button disabled={guardando} onClick={() => setAnular(null)}>Cancelar</button></div>
+        <div className="cobros-acciones"><button className="cobros-danger" disabled={guardando} onClick={anularPago}>Anular registro</button><button disabled={guardando} onClick={() => setAnular(null)}>Cancelar</button></div>
       </div>}
-      {!['cerrada', 'cancelada'].includes(estado) && resumen.requiereSena && <form className="cobros-registro" onSubmit={guardar}>
-        <label>Importe de la seña<input required inputMode="decimal" placeholder="0,00" value={monto} onChange={e => setMonto(e.target.value)} disabled={guardando} /></label>
+      {!['cerrada', 'cancelada'].includes(estado) && <form className="cobros-registro" onSubmit={guardar}>
+        <h3>Registrar cobro</h3>
+        <PagoFields value={pago} onChange={setPago} disabled={guardando} total={resumen.saldo} checkin={reserva.checkin} checkout={reserva.checkout} />
         {estado === 'pendiente' && <label className="cobros-check"><input type="checkbox" checked={confirmar} onChange={e => setConfirmar(e.target.checked)} disabled={guardando} />Confirmar también la reserva</label>}
-        <button className="cobros-primary" disabled={guardando || !monto}>{guardando ? 'Guardando…' : 'Registrar seña recibida'}</button>
+        <button className="cobros-primary" disabled={guardando || !pago.monto}>{guardando ? 'Guardando…' : 'Registrar pago recibido'}</button>
       </form>}
     </>}
   </section>

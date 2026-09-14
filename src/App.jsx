@@ -8,6 +8,7 @@ import GeneradorMensajes from './pages/GeneradorMensajes'
 import Recibos from './pages/Recibos'
 import Admin from './pages/Admin'
 import Cobros from './pages/Cobros'
+import FichaReserva from './pages/FichaReserva'
 
 function Toast({ msg, onClose }) {
   useEffect(() => {
@@ -79,6 +80,7 @@ export default function App() {
         <Route path="/recibos" element={<Recibos />} />
         <Route path="/admin" element={<Admin />} />
         <Route path="/cobros" element={<Cobros />} />
+        <Route path="/reservas/:id" element={<FichaReserva />} />
         <Route path="/reporte" element={<Reporte />} />
       </Routes>
       <Toast msg={toastMsg} onClose={() => setToastMsg('')} />

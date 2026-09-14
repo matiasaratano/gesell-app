@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { dinero, nombreCliente, normalizarBusqueda, resumenCobros } from '../lib/cobros'
 import CobrosReserva from '../components/CobrosReserva'
@@ -18,6 +18,7 @@ async function leerTodas(tabla, columnas) {
 }
 
 export default function Cobros() {
+  const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const [reservas, setReservas] = useState([])
   const [pagos, setPagos] = useState([])
@@ -65,6 +66,7 @@ export default function Cobros() {
     return coincide && enPeriodo && (!propiedad || r.propiedad_id === propiedad) && (filtro === 'todos' || r.cobro.estado === filtro || (filtro === 'con-sena' && r.cobro.estado === 'pagada'))
   }).sort((a, b) => a.checkin.localeCompare(b.checkin))
 
+  if (params.get('reserva_id')) return <Navigate to={`/reservas/${params.get('reserva_id')}?vista=pagos`} replace />
   return <main className="cobros cobros-page">
     <h1>Señas y cobros</h1>
     {error && <div role="alert" className="cobros-error">{error} <button onClick={recargar}>Reintentar</button></div>}
@@ -94,7 +96,7 @@ export default function Cobros() {
             <span className={`cobros-badge cobros-badge-${r.cobro.estado}`}>{etiquetas[r.cobro.estado]}</span>
             <div className="cobros-importes"><div><small>Total estadía</small><strong>{r.cobro.total === null ? 'A revisar' : dinero(r.cobro.total)}</strong></div><div><small>Recibido</small><strong>{dinero(r.cobro.recibido)}</strong></div><div><small>Saldo</small><strong>{r.cobro.saldo === null ? 'Sin calcular' : dinero(r.cobro.saldo)}</strong></div></div>
           </div>
-          <button onClick={() => setParams({ reserva_id: r.id })}>Ver cobros</button>
+          <button onClick={() => navigate(`/reservas/${r.id}?vista=pagos`)}>Ver cobros</button>
         </li>)}</ul>
       </>}
     </>}

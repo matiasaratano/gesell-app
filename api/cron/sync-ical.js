@@ -18,6 +18,7 @@ function getSupabaseAdmin() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !key) throw new Error('Faltan SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY')
   return createClient(url, key, {
+    global: { headers: { 'x-app-source': 'ical' } },
     auth: { persistSession: false },
   })
 }

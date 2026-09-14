@@ -3,6 +3,12 @@ import assert from 'node:assert/strict'
 import { resumenCobros, parseImporte } from './cobros.js'
 
 const reserva = { checkin: '2027-01-01', checkout: '2027-01-10', precio_total: 900000 }
+test('centavos no dejan saldos residuales al completar un pago', () => {
+  const r = resumenCobros({ ...reserva, precio_total: 0.8 }, [{ monto: 0.1, confirmado: true }, { monto: 0.7, confirmado: true }])
+  assert.equal(r.recibido,0.8)
+  assert.equal(r.saldo,0)
+  assert.equal(r.estado,'pagada')
+})
 test('solo contabiliza dinero confirmado; confirmada no significa pagada', () => {
   assert.equal(resumenCobros({ ...reserva, estado: 'confirmada' }).estado, 'sin-sena')
   const resumen = resumenCobros(reserva, [

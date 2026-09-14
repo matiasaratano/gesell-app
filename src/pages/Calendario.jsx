@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase, supabaseIcal, supabaseAutomatico } from '../lib/supabase'
 import { Link, useNavigate } from 'react-router-dom'
+import { celdasMes } from '../lib/calendario-grid.js'
 
 // ─── iCal utilities ─────────────────────────────────────────────────────────────
 function newIcalFeedRow() {
@@ -88,11 +89,6 @@ function ultimoDiaMes(year, month0) {
   return new Date(year, month0 + 1, 0).getDate()
 }
 
-function primerDiaSemana(year, month0) {
-  // Domingo=0 ... Sábado=6
-  return new Date(year, month0, 1).getDay()
-}
-
 function diffNoches(desde, hasta) {
   if (!desde || !hasta) return 0
   const [y1, m1, d1] = desde.split('-').map(Number)
@@ -155,6 +151,8 @@ export default function Calendario() {
 
   const hoy = new Date()
   const autoSyncDoneRef = useRef(false)
+  const cargaIdRef = useRef(0)
+  const cargarActualRef = useRef(null)
   const [year,  setYear]  = useState(hoy.getFullYear())
   const [month, setMonth] = useState(hoy.getMonth()) // 0-indexed
 
@@ -246,7 +244,7 @@ export default function Calendario() {
 
   const handleVerModificarReservas = () => {
     if (reservasSolapadas.length === 1) {
-      setDetalle(reservasSolapadas[0])
+      navigate(`/reservas/${reservasSolapadas[0].id}`)
     } else if (reservasSolapadas.length > 1) {
       setDiaSeleccionado({
         ds: `${rangoInicio} al ${rangoFin}`,
@@ -269,19 +267,22 @@ export default function Calendario() {
 
   // ── Carga de datos ────────────────────────────────────────────────────────────
   const cargar = useCallback(async () => {
+    const cargaId = ++cargaIdRef.current
     setLoading(true)
     setError(null)
     try {
-      // Rango: primer y último día del mes visible
-      const desde = toStr(year, month + 1, 1)
-      const hasta = toStr(year, month + 1, ultimoDiaMes(year, month))
+      const visibles = celdasMes(year, month)
+      const desde = visibles[0].ds
+      const hasta = visibles.at(-1).ds
       const hoy = hoySrt()
 
-      await supabase
+      await supabaseAutomatico
         .from('reservas')
         .update({ estado: 'finalizada' })
         .lt('checkout', hoy)
         .not('estado', 'in', '("finalizada","cancelada","cerrada")')
+
+      if (cargaId !== cargaIdRef.current) return
 
       const [resProps, resRes, resBloqueos] = await Promise.all([
         supabase
@@ -308,6 +309,7 @@ export default function Calendario() {
           .gte('fecha_fin', desde)
       ])
 
+      if (cargaId !== cargaIdRef.current) return
       if (resProps.error) throw resProps.error
       if (resRes.error)   throw resRes.error
       // bloqueos table may not exist yet; ignore error gracefully
@@ -317,67 +319,35 @@ export default function Calendario() {
 
       setPropiedades(resProps.data ?? [])
     } catch (e) {
-      setError('Error cargando datos: ' + e.message)
+      if (cargaId === cargaIdRef.current) setError('Error cargando datos: ' + e.message)
     } finally {
-      setLoading(false)
+      if (cargaId === cargaIdRef.current) setLoading(false)
     }
   }, [year, month])
 
-  useEffect(() => { cargar() }, [cargar])
+  useEffect(() => {
+    cargarActualRef.current = cargar
+    cargar()
+    return () => {
+      cargaIdRef.current += 1
+      cargarActualRef.current = null
+    }
+  }, [cargar])
 
   useEffect(() => {
     if (loading || syncing || autoSyncDoneRef.current || !icalDraft?.booking || !icalDraft?.airbnb) return
     const feeds = [...icalDraft.booking, ...icalDraft.airbnb].filter(f => f.url?.trim() && f.propiedad_id)
     if (!feeds.length) return
-    autoSyncDoneRef.current = true
-    const timer = setTimeout(() => sincronizarTodo({ silentSuccess: true }), 500)
+    const timer = setTimeout(() => {
+      autoSyncDoneRef.current = true
+      sincronizarTodo({ silentSuccess: true })
+    }, 500)
     return () => clearTimeout(timer)
   }, [loading, syncing, icalDraft])
 
   // ── Construcción de celdas del calendario ─────────────────────────────────────
   // Siempre 42 celdas (6 filas × 7 columnas)
-  const celdas = (() => {
-    const firstDow    = primerDiaSemana(year, month)
-    const diasMes     = ultimoDiaMes(year, month)
-    const prevYear    = month === 0  ? year - 1 : year
-    const prevMonth1  = month === 0  ? 12 : month        // 1-indexed
-    const diasPrevMes = ultimoDiaMes(prevYear, month === 0 ? 11 : month - 1)
-    const nextYear    = month === 11 ? year + 1 : year
-    const nextMonth1  = month === 11 ? 1 : month + 2     // 1-indexed
-
-    const arr = []
-
-    // Días del mes anterior (padding izquierdo)
-    for (let i = firstDow - 1; i >= 0; i--) {
-      arr.push({
-        ds:      toStr(prevYear, prevMonth1, diasPrevMes - i),
-        actual:  false,
-        dia:     diasPrevMes - i,
-      })
-    }
-
-    // Días del mes actual
-    for (let d = 1; d <= diasMes; d++) {
-      arr.push({
-        ds:     toStr(year, month + 1, d),
-        actual: true,
-        dia:    d,
-      })
-    }
-
-    // Días del mes siguiente (padding derecho hasta 42)
-    let nd = 1
-    while (arr.length < 42) {
-      arr.push({
-        ds:     toStr(nextYear, nextMonth1, nd),
-        actual: false,
-        dia:    nd,
-      })
-      nd++
-    }
-
-    return arr
-  })()
+  const celdas = celdasMes(year, month)
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
   function propColor(propId) {
@@ -452,7 +422,7 @@ export default function Calendario() {
       notas_internas: motivo?.trim() || 'Cierre manual',
     })
     if (!error) {
-      await cargar()
+      await cargarActualRef.current?.()
       clearRango()
       setModalBloqueo(false)
     }
@@ -462,7 +432,7 @@ export default function Calendario() {
   async function abrirBloqueo(bloqueoId) {
     const { error } = await supabase.from('bloqueos').delete().eq('id', bloqueoId)
     if (!error) {
-      await cargar()
+      await cargarActualRef.current?.()
       setBloqueoSeleccionado(null)
     }
   }
@@ -522,9 +492,9 @@ export default function Calendario() {
       }
       for (const [propiedadId, events] of snapshots) {
         const nombreProp = propiedades.find((p) => p.id === propiedadId)?.nombre || '—'
-        const reabiertas = await reconciliarCierres(supabase, events, propiedadId, canal)
+        const reabiertas = await reconciliarCierres(supabaseIcal, events, propiedadId, canal)
         totalReabiertas += reabiertas
-        const resultado = await upsertIcalReservas(supabase, events, propiedadId, canal)
+        const resultado = await upsertIcalReservas(supabaseIcal, events, propiedadId, canal)
         total += events.length
         totalActualizadas += resultado.updated
         totalReservas += resultado.insertedReservas
@@ -539,7 +509,7 @@ export default function Calendario() {
           conservadas: resultado.skipped,
         })
       }
-      await cargar()
+      await cargarActualRef.current?.()
       setLastSyncAt(new Date())
       if (!silentSuccess) {
         setSyncReport({
@@ -923,7 +893,7 @@ export default function Calendario() {
       )}
 
       {/* Grid del calendario / Timeline */}
-      {vista === 'timeline' ? (
+      {error ? null : loading ? <div role="status" style={{ padding: '32px 16px', textAlign: 'center', color: '#555' }}>Cargando fechas…</div> : vista === 'timeline' ? (
         <TimelineView
           dias={diasMesActual}
           propiedades={propiedades}
@@ -933,7 +903,7 @@ export default function Calendario() {
           rangoFin={rangoFin}
           rangoPropId={rangoPropId}
           handleCellClick={handleCellClick}
-          setDetalle={setDetalle}
+          setDetalle={r => navigate(`/reservas/${r.id}`)}
           setDiaSeleccionado={setDiaSeleccionado}
           propColor={propColor}
           formatFecha={formatFecha}
@@ -1009,9 +979,9 @@ export default function Calendario() {
                     {dia}
                   </div>
 
-                  {/* Indicadores de bloqueo (solo mes actual) */}
+                  {/* Indicadores de bloqueo */}
                   {(() => {
-                    const bsDelDia = actual ? bloqueosDelDia(ds) : []
+                    const bsDelDia = bloqueosDelDia(ds)
                     if (bsDelDia.length === 0) return null
                     return (
                       <div
@@ -1047,7 +1017,7 @@ export default function Calendario() {
                           key={r.id}
                           onClick={(e) => {
                             e.stopPropagation()
-                            setDetalle(r)
+                            navigate(`/reservas/${r.id}`)
                           }}
                           title={`${nombreReserva(r)} — ${r.propiedades?.nombre ?? ''}`}
                           style={{
@@ -1082,7 +1052,7 @@ export default function Calendario() {
                           key={r.id}
                           onClick={(e) => {
                             e.stopPropagation()
-                            setDetalle(r)
+                            navigate(`/reservas/${r.id}`)
                           }}
                           style={{
                             ...s.bar,
@@ -1120,7 +1090,7 @@ export default function Calendario() {
       )}
 
       {/* Resumen del mes */}
-      <ResumenMes reservas={reservas} filtro={filtro} propiedades={propiedades} />
+      {!loading && !error && <ResumenMes reservas={reservas.filter(r => r.checkin <= toStr(year, month + 1, ultimoDiaMes(year, month)) && r.checkout > toStr(year, month + 1, 1))} filtro={filtro} propiedades={propiedades} />}
 
       {/* Modal de detalle */}
       {detalle && (
@@ -1148,7 +1118,7 @@ export default function Calendario() {
           onClose={() => setDiaSeleccionado(null)}
           onVerDetalle={(r) => {
             setDiaSeleccionado(null)
-            setDetalle(r)
+            navigate(`/reservas/${r.id}`)
           }}
           propColor={propColor}
         />
@@ -2197,6 +2167,9 @@ function ModalDetalle({ reserva: r, color, onClose, onActualizar }) {
         </div>
 
         {/* Footer */}
+        {r.estado === 'cerrada' && !editando && <div style={{ padding: '12px 20px' }}>
+          <Link style={{ ...s.btnWA, display: 'inline-flex', alignItems: 'center', minHeight: 44 }} to={`/admin?seccion=reservas&reserva_id=${r.id}&accion=asignar-inquilino`}>Asignar inquilino</Link>
+        </div>}
         {r.estado !== 'cerrada' && !editando && <div style={{ padding: '12px 20px' }}>
           <Link to={`/cobros?reserva_id=${r.id}`}>Ver señas y cobros</Link>
         </div>}

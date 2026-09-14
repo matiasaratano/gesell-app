@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '../lib/supabase'
-import { useSearchParams } from 'react-router-dom'
+import { supabase, supabaseAutomatico } from '../lib/supabase'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import CobrosReserva from '../components/CobrosReserva'
 
 const SECCIONES = [
@@ -266,12 +266,13 @@ function CRUDPropiedades() {
 }
 
 // ─── RESERVAS ─────────────────────────────────────────────────────────────────
-function CRUDReservas() {
+export function CRUDReservas({ reservaInicial = null, onSaved, onCancel, onDeleted } = {}) {
+  const navigate = useNavigate()
   const [lista,        setLista]        = useState([])
   const [propiedades,  setPropiedades]  = useState([])
   const [clientes,     setClientes]     = useState([])
   const [loading,      setLoading]      = useState(true)
-  const [editando,     setEditando]     = useState(null)
+  const [editando,     setEditando]     = useState(reservaInicial)
   const [busquedaCli,  setBusquedaCli]  = useState('')
   const [mostrarDropdownCli, setMostrarDropdownCli] = useState(false)
 
@@ -296,7 +297,7 @@ function CRUDReservas() {
   })
   const [guardandoCliRapido, setGuardandoCliRapido] = useState(false)
 
-  const [searchParams, setSearchParams] = useSearchParams()
+  const [searchParams] = useSearchParams()
   const editReservaId = searchParams.get('reserva_id')
 
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(''), 2200) }
@@ -342,7 +343,7 @@ function CRUDReservas() {
 
     // Automatización: Finalizar reservas cuya fecha de checkout ya pasó
     // (excluye 'cerrada' para no tocar bloqueos de plataforma)
-    await supabase
+    await supabaseAutomatico
       .from('reservas')
       .update({ estado: 'finalizada' })
       .lt('checkout', hoy)
@@ -370,14 +371,10 @@ function CRUDReservas() {
     if (editReservaId && lista.length > 0 && !editando) {
       const res = lista.find(r => String(r.id) === String(editReservaId))
       if (res) {
-        setEditando({ ...res })
-        // Limpiar el parámetro de la URL
-        const newParams = new URLSearchParams(searchParams)
-        newParams.delete('reserva_id')
-        setSearchParams(newParams)
+        navigate(`/reservas/${res.id}${searchParams.get('accion') === 'asignar-inquilino' ? '?accion=asignar-inquilino' : ''}`, { replace: true })
       }
     }
-  }, [editReservaId, lista, editando, searchParams, setSearchParams])
+  }, [editReservaId, lista, editando, searchParams, navigate])
 
   async function guardar() {
     if (editando.estado !== 'cerrada' && !editando.cliente_id) {
@@ -407,7 +404,7 @@ function CRUDReservas() {
     ])
 
     if (resReservas.error) { showToast('Error verificando disponibilidad'); return }
-    if (resBloqueos.error) { showToast('Error verificando bloqueos manuales'); return }
+    if (resBloqueos.error && resBloqueos.error.code !== '42P01') { showToast('Error verificando bloqueos manuales'); return }
 
     if ((resReservas.data ?? []).length > 0) {
       const c = resReservas.data[0]
@@ -438,6 +435,7 @@ function CRUDReservas() {
     setGuardando(false)
     if (error) { showToast('Error: ' + error.message); return }
     showToast(editando.id ? '✓ Reserva actualizada' : '✓ Reserva creada')
+    onSaved?.()
     setEditando(null)
     setDetalle(null)
     cargar()
@@ -445,8 +443,11 @@ function CRUDReservas() {
 
   async function eliminar(id) {
     if (!confirm('¿Eliminar esta reserva?')) return
-    await supabase.from('pagos').delete().eq('reserva_id', id)
-    await supabase.from('reservas').delete().eq('id', id)
+    const { error: errorPagos } = await supabase.from('pagos').delete().eq('reserva_id', id)
+    if (errorPagos) { showToast('No se pudieron eliminar los pagos.'); return }
+    const { error: errorReserva } = await supabase.from('reservas').delete().eq('id', id)
+    if (errorReserva) { showToast('No se pudo eliminar la reserva.'); return }
+    onDeleted?.()
     setEditando(null)
     setDetalle(null)
     showToast('Reserva eliminada')
@@ -501,7 +502,7 @@ function CRUDReservas() {
     <div style={s.card}>
       <div style={s.cardHeader}>
         <h3 style={s.cardTitulo}>{editando.id ? 'Editar reserva' : 'Nueva reserva'}</h3>
-        <button style={s.btnCancelar} onClick={() => setEditando(null)}>Cancelar</button>
+        <button style={s.btnCancelar} onClick={() => onCancel ? onCancel() : setEditando(null)}>Cancelar</button>
       </div>
 
       <div style={s.grid2}>
@@ -645,7 +646,7 @@ function CRUDReservas() {
             Eliminar
           </button>
         )}
-        <button style={s.btnCancelar} onClick={() => setEditando(null)}>Cancelar</button>
+        <button style={s.btnCancelar} onClick={() => onCancel ? onCancel() : setEditando(null)}>Cancelar</button>
         <button style={s.btnPrimario} onClick={guardar} disabled={guardando}>
           {guardando ? 'Guardando…' : '✓ Guardar'}
         </button>
@@ -785,7 +786,7 @@ function CRUDReservas() {
             const ce = COLORES_ESTADO[r.estado] ?? { bg: '#f0f0f0', color: '#333' }
             return (
               <div key={r.id} style={s.fila} className="fila-clickeable"
-                onClick={() => setDetalle(r)}>
+                onClick={() => navigate(`/reservas/${r.id}`)}>
 	                <div style={s.filaInfo}>
 	                  <span style={s.filaNombre}>
 	                    {r.clientes?.nombre ? (
@@ -805,7 +806,7 @@ function CRUDReservas() {
 	                  <span style={{ ...s.badge, background: ce.bg, color: ce.color }}>
 	                    {r.estado === 'cerrada' ? nombreCanal(r.canal_origen) : (ESTADO_LABELS[r.estado] || r.estado)}
 	                  </span>
-                  <button style={s.btnSm} onClick={() => { setEditando({ ...r }); setDetalle(null) }}>Editar</button>
+                  <button style={s.btnSm} onClick={e => { e.stopPropagation(); navigate(`/reservas/${r.id}?accion=editar`) }}>Editar</button>
                 </div>
               </div>
             )
@@ -1163,7 +1164,7 @@ function CRUDClientes() {
                     display: 'flex', justifyContent: 'space-between', padding: '6px 10px',
                     background: '#fcfcfc', border: '1px solid #eee', borderRadius: 6, fontSize: 12
                   }}>
-                    <span>🏠 {r.propiedades?.nombre} · {fmtF(r.checkin)} → {fmtF(r.checkout)}</span>
+                    <Link to={`/reservas/${r.id}`}>🏠 {r.propiedades?.nombre} · {fmtF(r.checkin)} → {fmtF(r.checkout)}</Link>
                     <span style={{
                       fontWeight: 600,
                       color: r.estado === 'confirmada' ? '#065F46' : r.estado === 'finalizada' ? '#374151' : '#6B21A8'

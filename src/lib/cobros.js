@@ -1,13 +1,13 @@
 export function resumenCobros(reserva, pagos = []) {
   const recibido = pagos.filter(p => p.confirmado === true && Number(p.monto) > 0)
-    .reduce((total, p) => total + Number(p.monto), 0)
+    .reduce((total, p) => total + Math.round(Number(p.monto) * 100), 0) / 100
   const precio = Number(reserva.precio_total)
   const total = Number.isFinite(precio) && precio > 0 ? precio : null
   const requiereSena = reserva.requiere_sena !== false
   return {
     recibido, total, requiereSena,
-    saldo: total === null ? null : Math.max(0, total - recibido),
-    excedente: total === null ? 0 : Math.max(0, recibido - total),
+    saldo: total === null ? null : Math.max(0, Math.round((total - recibido) * 100) / 100),
+    excedente: total === null ? 0 : Math.max(0, Math.round((recibido - total) * 100) / 100),
     estado: total !== null && recibido >= total ? 'pagada' : !requiereSena ? 'sin-requisito' : recibido > 0 ? 'con-sena' : 'sin-sena',
   }
 }

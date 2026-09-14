@@ -1,6 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import PagoFields from '../components/PagoFields'
+import { pagoVacio, datosPago } from '../lib/operacion-reserva.js'
+import '../components/cobros.css'
 
 // ─── Constantes ────────────────────────────────────────────────────────────────
 const CANALES = ['whatsapp','mail','telefono','booking','airbnb','directo']
@@ -38,6 +41,9 @@ function diffNoches(desde, hasta) {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 export default function NuevaReserva({ onExito }) {
+  const navigate = useNavigate()
+  const operacionRef = useRef({ reserva: crypto.randomUUID(), pago: crypto.randomUUID() })
+  const ocupadoRef = useRef(false)
   const [searchParams] = useSearchParams()
   const initialPropId = searchParams.get('propiedad_id') || ''
   const initialCheckin = searchParams.get('checkin') || ''
@@ -75,6 +81,10 @@ export default function NuevaReserva({ onExito }) {
 
   // Paso 3
   const [precioTotal, setPrecioTotal]   = useState('')
+  const [modalidad, setModalidad] = useState('temporal')
+  const [requiereSena, setRequiereSena] = useState(true)
+  const [conPago, setConPago] = useState(false)
+  const [primerPago, setPrimerPago] = useState(() => pagoVacio())
   const [estado,      setEstado]        = useState(initialEstado)
   const [notasInt,    setNotasInt]      = useState('')
   const [guardando,   setGuardando]     = useState(false)
@@ -223,40 +233,21 @@ export default function NuevaReserva({ onExito }) {
 
   // ── PASO 3: guardar reserva ─────────────────────────────────────────────────
   async function guardarReserva() {
+    if (ocupadoRef.current) return
     setGuardError('')
-    if (!precioTotal || isNaN(Number(precioTotal))) {
+    if (!precioTotal || !Number.isFinite(Number(precioTotal)) || Number(precioTotal) <= 0) {
       return setGuardError('Ingresá un precio total válido.')
     }
+    ocupadoRef.current = true
     setGuardando(true)
 
     try {
-      let cId = clienteId
-
-      // Crear cliente si es nuevo
-      if (modoCliente === 'nuevo' || !cId) {
-        const { data: nuevoCli, error: errCli } = await supabase
-          .from('clientes')
-          .insert({
-            nombre:   clienteForm.nombre.trim(),
-            apellido: clienteForm.apellido.trim() || null,
-            dni:      clienteForm.dni.trim()      || null,
-            email:    clienteForm.email.trim()    || null,
-            whatsapp: clienteForm.whatsapp.trim() || null,
-            ciudad:   clienteForm.ciudad.trim()   || null,
-          })
-          .select('id')
-          .single()
-
-        if (errCli) throw new Error('Error creando cliente: ' + errCli.message)
-        cId = nuevoCli.id
-      }
-
-      // Crear reserva
-      const { data: nuevaRes, error: errRes } = await supabase
-        .from('reservas')
-        .insert({
+      const pago = conPago ? datosPago(primerPago, operacionRef.current.pago) : null
+      const { data: nuevaId, error: errRes } = await supabase.rpc('crear_reserva_con_pago', {
+        p_reserva: {
+          id: operacionRef.current.reserva,
           propiedad_id:    propId,
-          cliente_id:      cId,
+          cliente_id:      modoCliente === 'nuevo' ? null : clienteId,
           canal_origen:    canal,
           checkin:         checkin,
           checkout:        checkout,
@@ -266,27 +257,28 @@ export default function NuevaReserva({ onExito }) {
           precio_total:    Number(precioTotal),
           estado:          estado,
           notas_internas:  notasInt.trim() || null,
-        })
-        .select('id')
-        .single()
+          modalidad,
+          requiere_sena: requiereSena,
+        },
+        p_cliente: modoCliente === 'nuevo' || !clienteId ? {
+          nombre: clienteForm.nombre.trim(), apellido: clienteForm.apellido.trim() || null,
+          dni: clienteForm.dni.trim() || null, email: clienteForm.email.trim() || null,
+          whatsapp: clienteForm.whatsapp.trim() || null, ciudad: clienteForm.ciudad.trim() || null,
+        } : null,
+        p_pago: pago,
+      })
 
       if (errRes) throw new Error('Error creando reserva: ' + errRes.message)
 
-      // Crear pago de seña (sin monto definido aún, queda pendiente)
-      await supabase.from('pagos').insert({
-        reserva_id:     nuevaRes.id,
-        tipo:           'seña',
-        monto:          0,
-        confirmado:     false,
-      })
-
-      onExito?.(nuevaRes.id)
+      onExito?.(nuevaId)
       setExitoMsg('✓ Reserva creada exitosamente')
       setTimeout(() => setExitoMsg(''), 3000)
       resetForm()
+      navigate(`/reservas/${nuevaId}${conPago ? '?vista=pagos' : ''}`)
     } catch (e) {
       setGuardError(e.message)
     } finally {
+      ocupadoRef.current = false
       setGuardando(false)
     }
   }
@@ -412,14 +404,15 @@ export default function NuevaReserva({ onExito }) {
               {clientesRes.length > 0 && (
                 <div style={s.dropdown}>
                   {clientesRes.map(c => (
-                    <div
+                    <button
+                      type="button"
                       key={c.id}
-                      style={s.dropdownItem}
+                      style={{ ...s.dropdownItem, width: '100%', border: 0, textAlign: 'left', background: '#fff' }}
                       onClick={() => seleccionarCliente(c)}
                     >
                       <span style={s.dropdownNombre}>{c.nombre} {c.apellido}</span>
                       <span style={s.dropdownSub}>DNI {c.dni ?? '—'}  ·  {c.ciudad ?? ''}</span>
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}
@@ -546,6 +539,10 @@ export default function NuevaReserva({ onExito }) {
           </div>
 
           {/* Precio */}
+          <div className="cobros" style={{ marginBottom: 18 }}>
+            <label>Tipo de alquiler<select value={modalidad} onChange={e => { setModalidad(e.target.value); setRequiereSena(e.target.value !== 'mensual'); setPrimerPago(pagoVacio(e.target.value === 'mensual' ? 'mensualidad' : 'seña')) }}><option value="temporal">Temporal</option><option value="mensual">Alquiler largo / mensual</option></select></label>
+            <label className="cobros-check"><input type="checkbox" checked={requiereSena} onChange={e => setRequiereSena(e.target.checked)} />Requiere seña</label>
+          </div>
           <Campo label="Precio total *">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={s.prefijo}>$</span>
@@ -558,7 +555,7 @@ export default function NuevaReserva({ onExito }) {
                 autoFocus
               />
             </div>
-            {noches > 0 && precioTotal > 0 && (
+            {modalidad === 'temporal' && noches > 0 && precioTotal > 0 && (
               <div style={s.precioSub}>
                 = ${(Number(precioTotal) / noches).toLocaleString('es-AR', {maximumFractionDigits: 0})} / noche
               </div>
@@ -566,6 +563,10 @@ export default function NuevaReserva({ onExito }) {
           </Campo>
 
           {/* Estado */}
+          <div className="cobros" style={{ padding: '16px 0', marginBottom: 12 }}>
+            <label className="cobros-check"><input type="checkbox" checked={conPago} onChange={e => { setConPago(e.target.checked); if (e.target.checked) setEstado('confirmada') }} />Registrar un pago recibido</label>
+            {conPago && <PagoFields value={primerPago} onChange={setPrimerPago} disabled={guardando} total={Number(precioTotal) || null} checkin={checkin} checkout={checkout} />}
+          </div>
           <Campo label="Estado de la reserva">
             <div style={s.estadoGrid}>
               {ESTADOS.map(e => (
