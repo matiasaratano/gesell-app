@@ -15,7 +15,9 @@ export function isAllowedIcalUrl(urlStr) {
     h === 'booking.com' ||
     h.endsWith('.booking.com') ||
     h === 'airbnb.com' ||
-    h.endsWith('.airbnb.com')
+    h.endsWith('.airbnb.com') ||
+    h === 'airbnb.com.ar' ||
+    h.endsWith('.airbnb.com.ar')
   )
 }
 
