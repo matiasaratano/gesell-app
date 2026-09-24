@@ -3,8 +3,9 @@ import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { dinero, nombreCliente, normalizarBusqueda, resumenCobros } from '../lib/cobros'
 import CobrosReserva from '../components/CobrosReserva'
+import { cuotasMensuales } from '../lib/mensualidades.js'
 
-const etiquetas = { todos: 'Todas', 'sin-sena': 'Sin seña', 'con-sena': 'Con seña', pagada: 'Pagadas', 'sin-requisito': 'No requiere seña' }
+const etiquetas = { todos: 'Todas', 'sin-sena': 'Sin seña', 'con-sena': 'Con seña', pagada: 'Pagadas', 'sin-requisito': 'No requiere seña', mensualidades: 'Mensualidades pendientes' }
 const fecha = value => value?.split('-').reverse().join('/') || '—'
 
 async function leerTodas(tabla, columnas) {
@@ -57,13 +58,13 @@ export default function Cobros() {
   }))].filter(Number.isFinite).sort((a, b) => b - a)
   const porReserva = new Map()
   for (const p of pagos) porReserva.set(p.reserva_id, [...(porReserva.get(p.reserva_id) || []), p])
-  const lista = reservas.filter(r => !['cerrada', 'cancelada'].includes(r.estado)).map(r => ({ ...r, cobro: resumenCobros(r, porReserva.get(r.id)) })).filter(r => {
+  const lista = reservas.filter(r => !['cerrada', 'cancelada'].includes(r.estado)).map(r => ({ ...r, cobro: resumenCobros(r, porReserva.get(r.id)), mesesPendientes: r.modalidad === 'mensual' ? cuotasMensuales(r, porReserva.get(r.id) || [], hoy).filter(c => c.saldo > 0 && c.vencimiento <= hoy) : [] })).filter(r => {
     const texto = normalizarBusqueda(`${nombreCliente(r)} ${r.clientes?.whatsapp || ''} ${r.propiedades?.nombre || ''}`)
     const busca = normalizarBusqueda(busqueda.trim())
     const telefono = busca.replace(/\D/g, '')
     const coincide = texto.includes(busca) || (telefono.length >= 3 && String(r.clientes?.whatsapp || '').replace(/\D/g, '').includes(telefono))
-    const enPeriodo = periodo === 'todas' || (periodo === 'proximas' ? r.checkout >= hoy : r.checkin < `${Number(periodo) + 1}-04-01` && r.checkout > `${periodo}-12-01`)
-    return coincide && enPeriodo && (!propiedad || r.propiedad_id === propiedad) && (filtro === 'todos' || r.cobro.estado === filtro || (filtro === 'con-sena' && r.cobro.estado === 'pagada'))
+    const enPeriodo = periodo === 'todas' || (periodo === 'proximas' ? r.checkout >= hoy || (filtro === 'mensualidades' && r.mesesPendientes.length > 0) : r.checkin < `${Number(periodo) + 1}-04-01` && r.checkout > `${periodo}-12-01`)
+    return coincide && enPeriodo && (!propiedad || r.propiedad_id === propiedad) && (filtro === 'todos' || (filtro === 'mensualidades' && r.mesesPendientes.length > 0) || r.cobro.estado === filtro || (filtro === 'con-sena' && r.cobro.estado === 'pagada'))
   }).sort((a, b) => a.checkin.localeCompare(b.checkin))
 
   if (params.get('reserva_id')) return <Navigate to={`/reservas/${params.get('reserva_id')}?vista=pagos`} replace />
@@ -94,6 +95,7 @@ export default function Cobros() {
         <ul className="cobros-lista">{lista.map(r => <li key={r.id}>
           <div><strong>{nombreCliente(r)}</strong><p>{r.propiedades?.nombre} · {fecha(r.checkin)} → {fecha(r.checkout)}</p>
             <span className={`cobros-badge cobros-badge-${r.cobro.estado}`}>{etiquetas[r.cobro.estado]}</span>
+            {r.mesesPendientes.length > 0 && <p className="cobros-aviso">{r.mesesPendientes.length} mensualidad(es) por cobrar · {dinero(r.mesesPendientes.reduce((sum, c) => sum + c.saldo, 0))}</p>}
             <div className="cobros-importes"><div><small>Total estadía</small><strong>{r.cobro.total === null ? 'A revisar' : dinero(r.cobro.total)}</strong></div><div><small>Recibido</small><strong>{dinero(r.cobro.recibido)}</strong></div><div><small>Saldo</small><strong>{r.cobro.saldo === null ? 'Sin calcular' : dinero(r.cobro.saldo)}</strong></div></div>
           </div>
           <button onClick={() => navigate(`/reservas/${r.id}?vista=pagos`)}>Ver cobros</button>

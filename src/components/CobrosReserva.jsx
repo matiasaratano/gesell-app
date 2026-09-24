@@ -4,8 +4,10 @@ import { dinero, parseImporte, resumenCobros } from '../lib/cobros'
 import './cobros.css'
 import PagoFields from './PagoFields'
 import { datosPago, pagoVacio, mensualidades } from '../lib/operacion-reserva.js'
+import { cuotasMensuales } from '../lib/mensualidades.js'
+import PlanMensual from './PlanMensual'
 
-export default function CobrosReserva({ reserva, onChange }) {
+export default function CobrosReserva({ reserva, onChange, mesInicial = '' }) {
   const [pagos, setPagos] = useState([])
   const [cargando, setCargando] = useState(true)
   const [cargaFallida, setCargaFallida] = useState(false)
@@ -23,6 +25,26 @@ export default function CobrosReserva({ reserva, onChange }) {
   const [sinSena, setSinSena] = useState(reserva.requiere_sena === false)
   const [editandoCondiciones, setEditandoCondiciones] = useState(false)
   const ocupado = useRef(false)
+  const formularioRef = useRef(null)
+  const precargado = useRef(false)
+  const esMensual = (condiciones?.modalidad || reserva.modalidad) === 'mensual'
+
+  useEffect(() => {
+    if (precargado.current || cargando || cargaFallida || !mesInicial) return
+    precargado.current = true
+    const cuota = cuotasMensuales(reserva, pagos).find(c => c.mes.slice(0, 7) === mesInicial)
+    if (cuota?.saldo > 0) {
+      setPago({ ...pagoVacio('mensualidad'), periodo_mes: mesInicial, monto: String(cuota.saldo) })
+      formularioRef.current?.scrollIntoView({ block: 'center' })
+    }
+  }, [cargando, cargaFallida, mesInicial, reserva, pagos])
+
+  function cobrarMes(cuota) {
+    setPago({ ...pagoVacio('mensualidad'), periodo_mes: cuota.mes.slice(0, 7), monto: String(cuota.saldo) })
+    pagoIdRef.current = crypto.randomUUID()
+    setError(''); setMensaje('')
+    formularioRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
 
   useEffect(() => {
     let activo = true
@@ -54,7 +76,8 @@ export default function CobrosReserva({ reserva, onChange }) {
       const { data, error: err } = await supabase.from('reservas')
         .update(campos).eq('id', reserva.id).select('*').single()
       if (err) throw err
-      setCondiciones({ precio_total: data.precio_total, requiere_sena: data.requiere_sena })
+      setCondiciones({ precio_total: data.precio_total, requiere_sena: data.requiere_sena, modalidad: data.modalidad })
+      setPago(pagoVacio(data.modalidad === 'mensual' ? 'mensualidad' : data.requiere_sena === false ? 'saldo' : 'seña'))
       setEditandoCondiciones(false)
       setMensaje('Condiciones de cobro guardadas.')
       onChange?.()
@@ -120,6 +143,7 @@ export default function CobrosReserva({ reserva, onChange }) {
       <button type="button" disabled={guardando} onClick={() => {
         setPrecio(String(resumen.total ?? reserva.precio_total ?? ''))
         setSinSena(!resumen.requiereSena)
+        setModalidad(condiciones?.modalidad || reserva.modalidad || 'temporal')
         setEditandoCondiciones(v => !v)
       }}>Condiciones de cobro</button>
     </div>
@@ -140,18 +164,19 @@ export default function CobrosReserva({ reserva, onChange }) {
       {!resumen.requiereSena && <p className="cobros-sin-sena">No requiere seña</p>}
       {resumen.total === null && <p className="cobros-aviso">Falta el precio total de la reserva.</p>}
       {resumen.excedente > 0 && <p className="cobros-aviso">Cobrado de más: {dinero(resumen.excedente)}</p>}
+      {esMensual && <PlanMensual reserva={reserva} pagos={pagos} onCobrar={cobrarMes} onChange={onChange} disabled={guardando} />}
       <ul className="cobros-historial">
         {pagos.filter(p => Number(p.monto) > 0).map(p => <li key={p.id}>
           <span>{p.tipo || 'Pago'} · <strong>{dinero(p.monto)}</strong><small>{p.fecha_recibido?.slice(0, 10).split('-').reverse().join('/') || 'Sin fecha registrada'} · {p.metodo || 'Sin medio'}{p.periodo_mes ? ` · Mes ${p.periodo_mes.slice(0, 7)}` : ''} · {p.confirmado ? 'Registrado' : 'No contabilizado'}</small></span>
           {p.confirmado && <button className="cobros-danger" type="button" disabled={guardando} onClick={() => setAnular(p.id)}>Anular registro</button>}
         </li>)}
       </ul>
-      {mensualidades(pagos).length > 0 && <div className="cobros-meses"><h3>Mensualidades recibidas</h3>{mensualidades(pagos).map(([mes, monto]) => <p key={mes}>{mes.split('-').reverse().join('/')} <strong>{dinero(monto)}</strong></p>)}</div>}
+      {!esMensual && mensualidades(pagos).length > 0 && <div className="cobros-meses"><h3>Mensualidades recibidas</h3>{mensualidades(pagos).map(([mes, monto]) => <p key={mes}>{mes.split('-').reverse().join('/')} <strong>{dinero(monto)}</strong></p>)}</div>}
       {anular && <div className="cobros-aviso" role="group" aria-label="Confirmar anulación">
         <p>¿Anular este registro? Se descontará del recibido. Esto no devuelve dinero al cliente.</p>
         <div className="cobros-acciones"><button className="cobros-danger" disabled={guardando} onClick={anularPago}>Anular registro</button><button disabled={guardando} onClick={() => setAnular(null)}>Cancelar</button></div>
       </div>}
-      {!['cerrada', 'cancelada'].includes(estado) && <form className="cobros-registro" onSubmit={guardar}>
+      {!['cerrada', 'cancelada'].includes(estado) && <form ref={formularioRef} className="cobros-registro" onSubmit={guardar}>
         <h3>Registrar cobro</h3>
         <PagoFields value={pago} onChange={setPago} disabled={guardando} total={resumen.saldo} checkin={reserva.checkin} checkout={reserva.checkout} />
         {estado === 'pendiente' && <label className="cobros-check"><input type="checkbox" checked={confirmar} onChange={e => setConfirmar(e.target.checked)} disabled={guardando} />Confirmar también la reserva</label>}

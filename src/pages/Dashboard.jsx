@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase, supabaseAutomatico } from '../lib/supabase'
 import PendientesLimpieza from '../components/PendientesLimpieza'
+import { tareasReservas } from '../lib/tareas-reserva.js'
 
 // ─── Utilidades de fecha ──────────────────────────────────────────────────────
 function padZ(n) { return String(n).padStart(2, '0') }
@@ -31,20 +32,6 @@ function calcNoches(checkin, checkout) {
   return Math.max(0, Math.round((new Date(y2,m2-1,d2) - new Date(y1,m1-1,d1)) / 86400000))
 }
 
-function diasHasta(fecha) {
-  const hoy = hoyStr()
-  const [y1,m1,d1] = hoy.split('-').map(Number)
-  const [y2,m2,d2] = fecha.split('-').map(Number)
-  return Math.round((new Date(y2,m2-1,d2) - new Date(y1,m1-1,d1)) / 86400000)
-}
-
-function reservaNombre(r) {
-  const nombre = `${r.clientes?.nombre || ''} ${r.clientes?.apellido || ''}`.trim()
-  if (nombre) return nombre
-  if (r.notas_internas) return r.notas_internas
-  return r.canal_origen === 'booking' ? 'Reserva de Booking' : 'Reserva sin cliente'
-}
-
 function nombreCanal(canal) {
   if (canal === 'booking') return 'Booking'
   if (canal === 'airbnb') return 'Airbnb'
@@ -56,69 +43,16 @@ function tipoCierreReserva(r) {
   return `Cierre ${nombreCanal(r?.canal_origen)}`
 }
 
-function buildTareas(reservas = []) {
-  return reservas.flatMap((r) => {
-    const tareas = []
-    const prop = r.propiedades?.nombre || 'Propiedad sin nombre'
-    const fechas = `${prop} · ${fmtFecha(r.checkin)} → ${fmtFecha(r.checkout)}`
-    const canal = r.canal_origen ? r.canal_origen.charAt(0).toUpperCase() + r.canal_origen.slice(1) : 'Manual'
-    const precio = Number(r.precio_total || 0)
-    const esBooking = r.canal_origen === 'booking'
-
-    if (!r.cliente_id) {
-      tareas.push({
-        id: `${r.id}-cliente`,
-        reservaId: r.id,
-        tipo: r.canal_origen === 'booking' ? 'Booking sin cliente' : 'Falta cliente',
-        titulo: reservaNombre(r),
-        detalle: fechas,
-        color: '#92400E',
-        bg: '#FEF3C7',
-      })
-    }
-
-    if (!precio) {
-      tareas.push({
-        id: `${r.id}-precio`,
-        reservaId: r.id,
-        tipo: 'Falta precio',
-        titulo: reservaNombre(r),
-        detalle: `${fechas} · ${canal}`,
-        color: '#1E40AF',
-        bg: '#DBEAFE',
-      })
-    }
-
-    const tienePago = r.pagos?.some(p => p.confirmado && Number(p.monto) > 0)
-    if (!tienePago && r.requiere_sena !== false) {
-      tareas.push({
-        id: `${r.id}-confirmar`,
-        reservaId: r.id,
-        tipo: 'Sin seña registrada',
-        enlace: `/cobros?reserva_id=${r.id}`,
-        titulo: reservaNombre(r),
-        detalle: esBooking
-          ? `${fechas} · revisar condiciones de cobro de Booking`
-          : `${fechas} · registrar cuando recibas el pago`,
-        color: '#6B21A8',
-        bg: '#F3E8FF',
-      })
-    }
-
-    if (r.estado === 'pendiente' && esBooking && diasHasta(r.checkin) <= 45) {
-      tareas.push({
-        id: `${r.id}-contactar-booking`,
-        reservaId: r.id,
-        tipo: 'Contactar Booking',
-        titulo: reservaNombre(r),
-        detalle: `${fechas} · confirmar si sigue en pie`,
-        color: '#0F4D90',
-        bg: '#DBEAFE',
-      })
-    }
-
-    return tareas.map(t => ({ ...t, pospuestaHasta: r.recordar_el || null }))
-  })
+async function leerReservasTareas() {
+  const filas = []
+  for (let desde = 0; ; desde += 500) {
+    const { data, error } = await supabase.from('reservas')
+      .select('*, clientes(nombre, apellido), propiedades(nombre), pagos(monto, confirmado, tipo, periodo_mes)')
+      .not('estado', 'in', '("cancelada","cerrada")').order('id').range(desde, desde + 499)
+    if (error) throw error
+    filas.push(...data)
+    if (data.length < 500) return filas
+  }
 }
 
 // ─── Colores de estado ────────────────────────────────────────────────────────
@@ -166,8 +100,9 @@ export default function Dashboard() {
   const [ingresan,   setIngresan]   = useState([])
   const [salen,      setSalen]      = useState([])
   const [solicitudes,setSolicitudes] = useState([])
-  const [tareas,     setTareas]     = useState([])
-  const [verPospuestas, setVerPospuestas] = useState(false)
+  const [reservasTareas, setReservasTareas] = useState([])
+  const [vistaTareas, setVistaTareas] = useState('pendientes')
+  const [cargaTareasFallida, setCargaTareasFallida] = useState(false)
   const [errorTarea, setErrorTarea] = useState('')
   const [propiedades,setPropiedades] = useState([])
   const [loading,    setLoading]    = useState(true)
@@ -227,13 +162,8 @@ export default function Dashboard() {
           .order('checkin', { ascending: true })
           .limit(10),
 
-        // Tareas operativas sobre reservas actuales/futuras
-        supabase.from('reservas')
-          .select('*, clientes(nombre, apellido), propiedades(nombre), pagos(monto, confirmado)')
-          .gte('checkout', hoy)
-          .not('estado', 'in', '("cancelada","cerrada","finalizada")')
-          .order('checkin', { ascending: true })
-          .limit(80),
+        // Incluye mensualidades impagas aunque la estadía haya terminado.
+        leerReservasTareas().then(data => ({ data })).catch(error => ({ error })),
       ])
 
       setPropiedades(rProps.data ?? [])
@@ -241,21 +171,33 @@ export default function Dashboard() {
       setIngresan(rIngresan.data ?? [])
       setSalen(rSalen.data ?? [])
       setSolicitudes(rSolicitudes.data ?? [])
-      setTareas(buildTareas(rTareas.data ?? []))
+      setCargaTareasFallida(!!rTareas.error)
+      setErrorTarea(rTareas.error ? 'No se pudieron cargar los pendientes. Reintentá antes de dar todo por resuelto.' : '')
+      setReservasTareas(rTareas.data ?? [])
     } catch (e) {
-      // silencioso — cada sección maneja su propio vacío
+      setCargaTareasFallida(true)
+      setErrorTarea('No se pudo completar la carga de pendientes. Reintentá antes de dar todo por resuelto.')
     } finally {
       setLoading(false)
     }
   }
 
   const alojadasReales = alojadas.filter(r => r.estado !== 'cerrada')
-  const tareasVisibles = tareas.filter(t => (t.pospuestaHasta > hoyStr()) === verPospuestas)
+  const tareas = tareasReservas(reservasTareas, hoyStr())
+  const tareasVisibles = tareas.filter(t => t.grupo === vistaTareas)
   async function posponer(reservaId, fecha) {
     setErrorTarea('')
     const { data, error } = await supabase.from('reservas').update({ recordar_el: fecha || null }).eq('id', reservaId).select('id').single()
     if (error || !data) { setErrorTarea('No se pudo guardar el recordatorio.'); return false }
-    setTareas(prev => prev.map(t => t.reservaId === reservaId ? { ...t, pospuestaHasta: fecha || null } : t))
+    setReservasTareas(prev => prev.map(r => r.id === reservaId ? { ...r, recordar_el: fecha || null } : r))
+    return true
+  }
+  async function marcarContactado(reservaId) {
+    setErrorTarea('')
+    const hoy = hoyStr()
+    const { data, error } = await supabase.from('reservas').update({ booking_contactado_el: hoy }).eq('id', reservaId).select('id').single()
+    if (error || !data) { setErrorTarea('No se pudo registrar el contacto. Verificá que ejecutaste la actualización de Supabase.'); return false }
+    setReservasTareas(prev => prev.map(r => r.id === reservaId ? { ...r, booking_contactado_el: hoy } : r))
     return true
   }
   const cerradasAhora = alojadas.filter(r => r.estado === 'cerrada')
@@ -322,12 +264,12 @@ export default function Dashboard() {
 
           <PendientesLimpieza />
           <Seccion titulo="Tareas para ordenar" badge={tareasVisibles.length} style={s.tareasCard}>
-            <div className="cobros"><div className="cobros-tabs"><button aria-pressed={!verPospuestas} onClick={() => setVerPospuestas(false)}>Pendientes</button><button aria-pressed={verPospuestas} onClick={() => setVerPospuestas(true)}>Pospuestas</button></div></div>
+            <div className="cobros"><div className="cobros-tabs">{Object.entries({ pendientes: 'Pendientes', futuras: 'Más adelante', pospuestas: 'Pospuestas' }).map(([key, label]) => <button key={key} aria-pressed={vistaTareas === key} onClick={() => setVistaTareas(key)}>{label} · {tareas.filter(t => t.grupo === key).length}</button>)}</div></div>
             {errorTarea && <p role="alert">{errorTarea}</p>}
-            {tareasVisibles.length === 0 ? (
-              <Vacio texto={verPospuestas ? 'No hay tareas pospuestas' : 'No hay tareas para atender ahora'} />
+            {cargaTareasFallida ? <div className="cobros cobros-acciones"><button onClick={cargar}>Reintentar pendientes</button></div> : tareasVisibles.length === 0 ? (
+              <Vacio texto={vistaTareas === 'pospuestas' ? 'No hay tareas pospuestas' : vistaTareas === 'futuras' ? 'No hay tareas programadas' : 'No hay tareas para atender ahora'} />
             ) : (
-              tareasVisibles.map(t => <FilaTarea key={t.id} tarea={t} compact={isMobile} onPosponer={posponer} />)
+              tareasVisibles.map(t => <FilaTarea key={t.id} tarea={t} onPosponer={posponer} onContactado={marcarContactado} />)
             )}
           </Seccion>
 
@@ -485,7 +427,7 @@ function Vacio({ texto }) {
   )
 }
 
-function FilaTarea({ tarea: t, compact = false, onPosponer }) {
+function FilaTarea({ tarea: t, onPosponer, onContactado }) {
   const [fecha, setFecha] = useState(t.pospuestaHasta || '')
   const [abierto, setAbierto] = useState(false)
   const [guardando, setGuardando] = useState(false)
@@ -496,26 +438,16 @@ function FilaTarea({ tarea: t, compact = false, onPosponer }) {
     if (ok) setAbierto(false)
   }
   return (
-    <div>
-    <Link
-      to={`/reservas/${t.reservaId}`}
-      style={{ ...s.filaTareaLink, ...(compact ? s.filaTareaLinkMobile : {}) }}
-      className="fila-clickeable"
-    >
-      <span style={{ ...s.tareaTipo, ...(compact ? s.tareaTipoMobile : {}), background: t.bg, color: t.color }}>
-        {t.tipo}
-      </span>
-      <div style={s.filaTareaInfo}>
-        <div style={s.nombre}>{t.titulo}</div>
-        <div style={s.sub}>{t.detalle}</div>
-      </div>
-      <span style={s.tareaArrow}>→</span>
-    </Link>
+    <article className="cobros tarea-grupo" aria-label={`Pendientes de ${t.titulo}`}>
+    <h3><Link to={`/reservas/${t.reservaId}`}>{t.titulo}</Link></h3>
+    <small>{t.propiedad} · {fmtFecha(t.checkin)} → {fmtFecha(t.checkout)}</small>
+    <ul className="tarea-avisos">{t.avisos.map(a => <li key={a.id} className={a.desde > hoyStr() ? 'tarea-futura' : ''}><Link to={a.enlace}>{a.texto}</Link>{a.desde > hoyStr() && <small>A partir del {fmtFecha(a.desde)}</small>}</li>)}</ul>
+    {t.avisos.some(a => a.id === 'contacto') && <button disabled={guardando} onClick={async () => { setGuardando(true); try { await onContactado(t.reservaId) } finally { setGuardando(false) } }}>Marcar como contactado</button>}
     <div className="cobros tarea-posponer">
       {t.pospuestaHasta > hoyStr() && <small>Recordar el {t.pospuestaHasta.split('-').reverse().join('/')}</small>}
       {abierto ? <div className="cobros-acciones"><label>Fecha del recordatorio<input type="date" min={hoyStr()} value={fecha} onChange={e => setFecha(e.target.value)} /></label><button disabled={guardando || !fecha || fecha < hoyStr()} onClick={() => guardar(fecha)}>Guardar fecha</button><button disabled={guardando} onClick={() => setAbierto(false)}>Cancelar</button></div> : <div className="cobros-acciones"><button onClick={() => setAbierto(true)}>Posponer reserva</button>{t.pospuestaHasta && <button disabled={guardando} onClick={() => guardar(null)}>Reactivar</button>}</div>}
     </div>
-    </div>
+    </article>
   )
 }
 

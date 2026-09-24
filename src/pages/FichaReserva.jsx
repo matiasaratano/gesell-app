@@ -6,6 +6,7 @@ import CobrosReserva from '../components/CobrosReserva'
 import { nombreCliente } from '../lib/cobros.js'
 import { hoyLocal, mensajeReserva } from '../lib/operacion-reserva.js'
 import { reservaDesdeCierre } from '../lib/calendario-grid.js'
+import { mesAnterior, sumarDias } from '../lib/mensualidades.js'
 
 const fecha = value => value?.slice(0, 10).split('-').reverse().join('/') || '—'
 const campos = { checkin: 'Ingreso', checkout: 'Salida', estado: 'Estado', canal_origen: 'Canal', precio_total: 'Precio total', modalidad: 'Tipo de alquiler', requiere_sena: 'Requiere seña', recordar_el: 'Recordatorio', limpieza_completada_para: 'Limpieza completada', notas_internas: 'Notas', adultos: 'Adultos', menores: 'Menores', monto: 'Importe', tipo: 'Concepto', fecha_recibido: 'Fecha de cobro', metodo: 'Medio de pago', confirmado: 'Pago contabilizado', periodo_mes: 'Mes abonado' }
@@ -15,6 +16,8 @@ function cambios(entry) {
   const partes = Object.entries(campos).filter(([key]) => JSON.stringify(entry.antes?.[key]) !== JSON.stringify(entry.despues?.[key]))
     .map(([key, label]) => `${label}: ${String(entry.antes?.[key] ?? '—')} → ${String(entry.despues?.[key] ?? '—')}`)
   if (entry.antes?.cliente_id !== entry.despues?.cliente_id) partes.push('Cliente actualizado')
+  if (JSON.stringify(entry.antes?.plan_mensual) !== JSON.stringify(entry.despues?.plan_mensual)) partes.push('Plan de mensualidades actualizado')
+  if (entry.antes?.booking_contactado_el !== entry.despues?.booking_contactado_el) partes.push(`Contacto Booking: ${fecha(entry.despues?.booking_contactado_el)}`)
   return partes.join('\n') || 'Datos de la reserva actualizados'
 }
 
@@ -113,10 +116,15 @@ function FichaReserva() {
     {tab === 'datos' && <div className="ficha-datos">
       <dl><dt>Cliente</dt><dd>{nombreCliente(reserva)}</dd><dt>Teléfono</dt><dd>{reserva.clientes?.whatsapp || 'Sin teléfono'}</dd><dt>Huéspedes</dt><dd>{reserva.adultos || 0} adultos · {reserva.menores || 0} menores</dd><dt>Tipo de alquiler</dt><dd>{reserva.modalidad === 'mensual' ? 'Largo / mensual' : 'Temporal'}</dd></dl>
       {reserva.notas_internas && <p className="ficha-notas">{reserva.notas_internas}</p>}
+      {!cerrada && reserva.canal_origen === 'booking' && <section><h3>Seguimiento de Booking</h3>
+        <p>{reserva.booking_contactado_el ? `Contactado el ${fecha(reserva.booking_contactado_el)}` : `Contactar a partir del ${fecha(sumarDias(reserva.checkin, -45))}`}</p>
+        {reserva.modalidad !== 'mensual' && reserva.requiere_sena !== false && !pagos.some(p => p.confirmado && Number(p.monto) > 0) && <p>Revisar condiciones y pedir seña a partir del {fecha(mesAnterior(reserva.checkin))}</p>}
+        <button disabled={guardando} onClick={() => actualizar({ booking_contactado_el: reserva.booking_contactado_el ? null : hoyLocal() })}>{reserva.booking_contactado_el ? 'Marcar contacto pendiente' : 'Marcar como contactado'}</button>
+      </section>}
       {!cerrada && <section><h3>Recordatorio de la reserva</h3><label>Recordar el<input type="date" min={hoyLocal()} value={recordar} onChange={e => setRecordar(e.target.value)} /></label><div className="cobros-acciones"><button disabled={guardando || !recordar || recordar < hoyLocal()} onClick={() => actualizar({ recordar_el: recordar })}>Guardar fecha</button>{reserva.recordar_el && <button disabled={guardando} onClick={() => actualizar({ recordar_el: null })}>Reactivar pendientes</button>}</div></section>}
       {!cerrada && reserva.estado !== 'cancelada' && reserva.checkout <= hoyLocal() && <section><h3>Limpieza · {reserva.propiedades?.nombre}</h3><p>{limpia ? 'Limpieza completada' : 'Pendiente de limpieza'} · salida {fecha(reserva.checkout)}</p><button disabled={guardando} onClick={() => actualizar({ limpieza_completada_para: limpia ? null : reserva.checkout })}>{limpia ? 'Marcar pendiente' : 'Marcar limpio'}</button></section>}
     </div>}
-    {tab === 'pagos' && !cerrada && <CobrosReserva key={id} reserva={reserva} onChange={recargar} />}
+    {tab === 'pagos' && !cerrada && <CobrosReserva key={id} reserva={reserva} onChange={recargar} mesInicial={params.get('mes') || ''} />}
     {tab === 'mensaje' && !cerrada && <section className="ficha-mensaje"><h3>Detalle para el huésped</h3><textarea aria-label="Mensaje para WhatsApp" rows={10} value={texto} onChange={e => setBorrador(e.target.value)} /><div className="cobros-acciones"><button onClick={async () => { try { await navigator.clipboard.writeText(texto); setMensaje('Mensaje copiado.') } catch { setError('No se pudo copiar el mensaje.') } }}>Copiar mensaje</button><button onClick={() => setBorrador(null)}>Actualizar detalle</button>{reserva.clientes?.whatsapp && <a className="cobros-link" target="_blank" rel="noreferrer" href={`https://wa.me/${reserva.clientes.whatsapp.replace(/\D/g, '')}?text=${encodeURIComponent(texto)}`}>Abrir WhatsApp</a>}</div></section>}
     {tab === 'historial' && <section><h3>Historial de cambios</h3>{historialError && <p role="alert">{historialError}</p>}{!historialError && !historial.length && <p>No hay cambios registrados todavía.</p>}<ul className="cobros-historial">{historial.map(h => <li key={h.id}><div><small>{new Date(h.registrado_at).toLocaleString('es-AR')} · {h.origen === 'ical' ? 'Sincronización iCal' : h.origen === 'automatico' ? 'Actualización automática' : 'App'}</small><p className="ficha-notas">{cambios(h)}</p></div></li>)}</ul>{historial.length === limite && <button onClick={() => setLimite(n => n + 30)}>Ver cambios anteriores</button>}</section>}
   </main>
