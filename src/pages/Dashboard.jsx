@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { supabase, supabaseAutomatico } from '../lib/supabase'
+import PagoRapido from '../components/PagoRapido'
+import { ingresosManana, vistaDepartamento } from '../lib/panel-departamentos.js'
 import PendientesLimpieza from '../components/PendientesLimpieza'
 import { tareasReservas } from '../lib/tareas-reserva.js'
 
@@ -47,8 +49,8 @@ async function leerReservasTareas() {
   const filas = []
   for (let desde = 0; ; desde += 500) {
     const { data, error } = await supabase.from('reservas')
-      .select('*, clientes(nombre, apellido), propiedades(nombre), pagos(monto, confirmado, tipo, periodo_mes)')
-      .not('estado', 'in', '("cancelada","cerrada")').order('id').range(desde, desde + 499)
+      .select('*, clientes(*), propiedades(*), pagos(*)')
+      .order('id').range(desde, desde + 499)
     if (error) throw error
     filas.push(...data)
     if (data.length < 500) return filas
@@ -96,10 +98,10 @@ export default function Dashboard() {
   const isMobile = useIsMobile()
   const [hora, setHora] = useState(fmtHora())
 
-  const [alojadas,   setAlojadas]   = useState([])
-  const [ingresan,   setIngresan]   = useState([])
-  const [salen,      setSalen]      = useState([])
-  const [solicitudes,setSolicitudes] = useState([])
+  const [propiedades, setPropiedades] = useState([])
+  const [params, setParams] = useSearchParams()
+  const propiedadId = params.get('propiedad') || ''
+  const [pagoRapido, setPagoRapido] = useState(null)
   const [reservasTareas, setReservasTareas] = useState([])
   const [vistaTareas, setVistaTareas] = useState('pendientes')
   const [cargaTareasFallida, setCargaTareasFallida] = useState(false)
@@ -129,49 +131,17 @@ export default function Dashboard() {
         .lt('checkout', hoy)
         .not('estado', 'in', '("finalizada","cancelada","cerrada")')
 
-      const [rProps, rAlojadas, rIngresan, rSalen, rSolicitudes, rTareas] = await Promise.all([
+      const [rProps, rTareas] = await Promise.all([
 
         // Propiedades activas
         supabase.from('propiedades').select('id, nombre').eq('activa', true).order('nombre'),
-
-        // Reservas actualmente alojadas: checkin <= hoy < checkout, excluye canceladas
-        supabase.from('reservas')
-          .select('id, checkin, checkout, noches, adultos, precio_total, estado, canal_origen, clientes(nombre, apellido, whatsapp), propiedades(nombre)')
-          .lte('checkin', hoy)
-          .gt('checkout', hoy)
-          .in('estado', ['confirmada', 'pendiente', 'activa', 'señada', 'cerrada'])
-          .order('checkout'),
-
-        // Ingresan hoy (excluye canceladas y bloqueos de plataforma)
-        supabase.from('reservas')
-          .select('id, checkin, checkout, noches, adultos, precio_total, estado, canal_origen, clientes(nombre, apellido, whatsapp), propiedades(nombre)')
-          .eq('checkin', hoy)
-          .not('estado', 'in', '("cancelada","cerrada")')
-          .order('propiedades(nombre)'),
-
-        // Salen hoy (excluye canceladas y bloqueos de plataforma)
-        supabase.from('reservas')
-          .select('id, checkin, checkout, noches, adultos, precio_total, estado, canal_origen, clientes(nombre, apellido, whatsapp), propiedades(nombre)')
-          .eq('checkout', hoy)
-          .not('estado', 'in', '("cancelada","cerrada")')
-          .order('propiedades(nombre)'),
-
-        // Últimas solicitudes (pendientes o reservas de canales sin cliente)
-        supabase.from('reservas')
-          .select('id, checkin, checkout, estado, canal_origen, created_at, clientes(nombre, apellido), propiedades(nombre)')
-          .in('estado', ['señada', 'pendiente'])
-          .order('checkin', { ascending: true })
-          .limit(10),
 
         // Incluye mensualidades impagas aunque la estadía haya terminado.
         leerReservasTareas().then(data => ({ data })).catch(error => ({ error })),
       ])
 
-      if ([rProps, rAlojadas, rIngresan, rSalen, rSolicitudes].some(r => r.error)) throw new Error('No se pudo cargar el panel.')
-      setAlojadas(rAlojadas.data ?? [])
-      setIngresan(rIngresan.data ?? [])
-      setSalen(rSalen.data ?? [])
-      setSolicitudes(rSolicitudes.data ?? [])
+      if (rProps.error || rTareas.error) throw new Error('No se pudo cargar el panel.')
+      setPropiedades(rProps.data ?? [])
       setCargaTareasFallida(!!rTareas.error)
       setErrorTarea(rTareas.error ? 'No se pudieron cargar los pendientes. Reintentá antes de dar todo por resuelto.' : '')
       setReservasTareas(rTareas.data ?? [])
@@ -184,9 +154,16 @@ export default function Dashboard() {
     }
   }
 
+  const hoy = hoyStr()
+  const filtradas = vistaDepartamento(reservasTareas, propiedadId)
+  const alojadas = filtradas.filter(r => r.checkin <= hoy && r.checkout > hoy && !['cancelada', 'finalizada'].includes(r.estado))
   const alojadasReales = alojadas.filter(r => r.estado !== 'cerrada')
-  const tareas = tareasReservas(reservasTareas, hoyStr())
-  const tareasVisibles = tareas.filter(t => t.grupo === vistaTareas)
+  const ingresan = filtradas.filter(r => r.checkin === hoy && !['cancelada', 'cerrada', 'finalizada'].includes(r.estado))
+  const manana = ingresosManana(filtradas, hoy)
+  const salen = filtradas.filter(r => r.checkout === hoy && !['cancelada', 'cerrada'].includes(r.estado))
+  const solicitudes = filtradas.filter(r => ['pendiente', 'señada'].includes(r.estado) && r.checkout >= hoy).sort((a, b) => a.checkin.localeCompare(b.checkin))
+  const tareas = tareasReservas(filtradas, hoy).sort((a, b) => a.checkin.localeCompare(b.checkin) || a.id.localeCompare(b.id))
+  const tareasVisibles = tareas.filter(t => vistaTareas === 'pospuestas' ? t.grupo === 'pospuestas' : t.grupo !== 'pospuestas')
   async function posponer(reservaId, fecha) {
     setErrorTarea('')
     const { data, error } = await supabase.from('reservas').update({ recordar_el: fecha || null }).eq('id', reservaId).select('id').single()
@@ -215,6 +192,10 @@ export default function Dashboard() {
         </div>
         <div style={{ ...s.reloj, ...(isMobile ? s.relojMobile : {}) }}>{hora}</div>
       </div>
+
+      <div className="cobros panel-filtro"><label>Departamento<select aria-label="Departamento" value={propiedadId} onChange={e => setParams(e.target.value ? { propiedad: e.target.value } : {})}>
+        <option value="">Todos los departamentos</option>{propiedades.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+      </select></label><button onClick={cargar} disabled={loading}>Actualizar</button></div>
 
       {loading ? (
         <div style={s.loadingPage}>Cargando…</div>
@@ -247,6 +228,9 @@ export default function Dashboard() {
               compact={isMobile}
             />
             <MetricaCard
+              valor={manana.length} label="Ingresan mañana" color="#155E63" bg="#CCFBF1" icono="→" compact={isMobile}
+            />
+            <MetricaCard
               valor={salen.length}
               label="Salen hoy"
               color="#92400E"
@@ -264,14 +248,14 @@ export default function Dashboard() {
             />
           </div>
 
-          <PendientesLimpieza />
+          <PendientesLimpieza propiedadId={propiedadId} />
           <Seccion titulo="Tareas para ordenar" badge={tareasVisibles.length} style={s.tareasCard}>
-            <div className="cobros"><div className="cobros-tabs">{Object.entries({ pendientes: 'Pendientes', futuras: 'Más adelante', pospuestas: 'Pospuestas' }).map(([key, label]) => <button key={key} aria-pressed={vistaTareas === key} onClick={() => setVistaTareas(key)}>{label} · {tareas.filter(t => t.grupo === key).length}</button>)}</div></div>
+            <div className="cobros"><div className="cobros-tabs">{['pendientes', 'pospuestas'].map(vista => <button key={vista} aria-pressed={vistaTareas === vista} onClick={() => setVistaTareas(vista)}>{vista === 'pendientes' ? 'Pendientes' : 'Pospuestas'} · {tareas.filter(t => vista === 'pospuestas' ? t.grupo === 'pospuestas' : t.grupo !== 'pospuestas').length}</button>)}</div></div>
             {errorTarea && <p role="alert">{errorTarea}</p>}
             {cargaTareasFallida ? <div className="cobros cobros-acciones"><button onClick={cargar}>Reintentar pendientes</button></div> : tareasVisibles.length === 0 ? (
-              <Vacio texto={vistaTareas === 'pospuestas' ? 'No hay tareas pospuestas' : vistaTareas === 'futuras' ? 'No hay tareas programadas' : 'No hay tareas para atender ahora'} />
+              <Vacio texto={vistaTareas === 'pospuestas' ? 'No hay tareas pospuestas' : 'No hay tareas pendientes'} />
             ) : (
-              tareasVisibles.map(t => <FilaTarea key={t.id} tarea={t} onPosponer={posponer} onContactado={marcarContactado} />)
+              tareasVisibles.map(t => <FilaTarea key={t.id} tarea={t} onPosponer={posponer} onContactado={marcarContactado} onCobrar={setPagoRapido} />)
             )}
           </Seccion>
 
@@ -335,6 +319,9 @@ export default function Dashboard() {
                 )}
               </Seccion>
 
+              <Seccion titulo="Ingresan mañana" badge={manana.length}>
+                {manana.length ? manana.map(r => <FilaReserva key={r.id} reserva={r} mostrarProp />) : <Vacio texto="Sin ingresos programados mañana" />}
+              </Seccion>
               <Seccion titulo="Salen hoy" badge={salen.length}>
                 {salen.length === 0 ? (
                   <Vacio texto="Sin salidas programadas hoy" />
@@ -346,6 +333,7 @@ export default function Dashboard() {
           </div>
         </>
       )}
+      {pagoRapido && <PagoRapido key={pagoRapido} reservaId={pagoRapido} onClose={() => setPagoRapido(null)} onSaved={cargar} />}
     </div>
   )
 }
@@ -426,7 +414,7 @@ function Vacio({ texto }) {
   )
 }
 
-function FilaTarea({ tarea: t, onPosponer, onContactado }) {
+function FilaTarea({ tarea: t, onPosponer, onContactado, onCobrar }) {
   const [fecha, setFecha] = useState(t.pospuestaHasta || '')
   const [abierto, setAbierto] = useState(false)
   const [guardando, setGuardando] = useState(false)
@@ -440,6 +428,7 @@ function FilaTarea({ tarea: t, onPosponer, onContactado }) {
     <article className="cobros tarea-grupo" aria-label={`Pendientes de ${t.titulo}`}>
     <h3><Link to={`/reservas/${t.reservaId}`}>{t.titulo}</Link></h3>
     <small>{t.propiedad} · {fmtFecha(t.checkin)} → {fmtFecha(t.checkout)}</small>
+    {t.avisos.some(a => ['sena', 'saldo', 'plan'].includes(a.id) || a.id.startsWith('mes-')) && <div className="cobros-acciones"><button onClick={() => onCobrar(t.reservaId)}>Registrar pago</button></div>}
     <ul className="tarea-avisos">{t.avisos.map(a => <li key={a.id} className={a.desde > hoyStr() ? 'tarea-futura' : ''}><Link to={a.enlace}>{a.texto}</Link>{a.desde > hoyStr() && <small>A partir del {fmtFecha(a.desde)}</small>}</li>)}</ul>
     {t.avisos.some(a => a.id === 'contacto') && <button disabled={guardando} onClick={async () => { setGuardando(true); try { await onContactado(t.reservaId) } finally { setGuardando(false) } }}>Marcar como contactado</button>}
     <div className="cobros tarea-posponer">
@@ -477,7 +466,7 @@ const s = {
   loadingPage: { padding: 60, textAlign: 'center', color: '#aaa', fontSize: 14 },
 
   // Métricas
-  metricasRow: { display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 20 },
+  metricasRow: { display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: 12, marginBottom: 20 },
   metricasRowMobile: { gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8, marginBottom: 12 },
   metricaCard: { borderRadius: 12, padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 4 },
   metricaCardMobile: { padding: '12px 12px', minHeight: 92 },

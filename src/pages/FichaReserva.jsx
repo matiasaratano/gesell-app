@@ -106,6 +106,7 @@ function FichaReserva() {
     <p>{reserva.propiedades?.nombre} · {fecha(reserva.checkin)} → {fecha(reserva.checkout)}</p>
     <p>{reserva.estado} · {manual ? 'Manual' : reserva.canal_origen}</p>
     <div className="cobros-acciones"><button onClick={() => setEditor(reserva)}>Editar reserva</button>
+      {!cerrada && <Link className="cobros-link" to={`/recibos?reserva_id=${reserva.id}`}>Recibos de pagos</Link>}
       {cerrada && <button className="cobros-primary" onClick={() => setEditor(reservaDesdeCierre(reserva))}>Asignar inquilino</button>}
       {cerrada && manual && <button onClick={() => setAbrir(true)}>Abrir cierre manual</button>}
     </div>

@@ -93,7 +93,7 @@ function match(row,u) {
    assert.match(await page.locator('textarea').inputValue(),/200.000/);
    for(const name of ['Ficha','Detalle','Sin disp.','Derivación']){await page.getByRole('button',{name:new RegExp(name)}).first().click();}
    await page.screenshot({path:`${output}/390-message-generated.png`,fullPage:true});
-   await page.goto(base+'/recibos');await page.getByPlaceholder('Nombre, apellido o DNI para buscar uno existente…').fill('Valeria');await page.getByText('Valeria Prueba',{exact:true}).first().click();
+   await page.goto(base+'/recibos?modo=manual');await page.getByPlaceholder('Nombre, apellido o DNI para buscar uno existente…').fill('Valeria');await page.getByText('Valeria Prueba',{exact:true}).first().click();
    assert.equal(await page.getByRole('button',{name:'Cliente guardado',exact:true}).isDisabled(),true);
    await page.getByPlaceholder('287000',{exact:true}).fill('3000.50');await page.getByText('TRES MIL CON 50/100 PESOS ARGENTINOS',{exact:true}).first().waitFor();
    await page.evaluate(()=>Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{window.copied=text;}}}));

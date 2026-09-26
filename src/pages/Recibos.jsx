@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useConfirmacion } from '../lib/confirmacion.js';
+import { useSearchParams } from 'react-router-dom';
+import SeleccionRecibo from '../components/SeleccionRecibo';
+import { datosReciboPago } from '../lib/recibo-pago.js';
 
 // ─── Número en letras (portado del original) ──────────────────────────────────
 function numeroALetras(n) {
@@ -83,15 +86,17 @@ function numeroALetras(n) {
 // ─── Propiedades desde Supabase (se cargan dinámicamente) ─────────────────────
 
 const CONCEPTOS = {
-  reserva: 'seña / reserva (30%)',
+  reserva: 'seña / reserva',
   saldo: 'saldo de alquiler',
   total: 'pago total de alquiler',
+  mensualidad: 'mensualidad de alquiler',
 };
 
 const FORMAS = {
   transferencia: 'Transferencia bancaria.',
   efectivo: 'Efectivo.',
   mercadopago: 'Mercado Pago.',
+  otro: 'Otro medio de pago.',
 };
 
 function fmtFecha(str) {
@@ -127,7 +132,8 @@ function fmtMonto(n) {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 export default function Recibos() {
-  const [panelActivo, setPanelActivo] = useState('recibo');
+  const [params, setParams] = useSearchParams();
+  const manual = params.get('modo') === 'manual';
   const [toast, setToast] = useState('');
 
   function showToast(msg) {
@@ -142,7 +148,13 @@ export default function Recibos() {
         {/*<span style={s.headerSub}>Departamentos Norte & San Bernardo</span>*/}
       </header>
 
-      {panelActivo === 'recibo' && <PanelRecibo showToast={showToast} />}
+      <div className="cobros print-hide"><div className="cobros-tabs">
+        <button aria-pressed={!manual} onClick={() => setParams({})}>Desde una reserva</button>
+        <button aria-pressed={manual} onClick={() => setParams({ modo: 'manual' })}>Carga manual</button>
+      </div></div>
+      {manual ? <PanelRecibo showToast={showToast} /> : <SeleccionRecibo renderRecibo={(reserva, pago, verificar, verificando) =>
+        <PanelRecibo key={JSON.stringify([reserva, pago])} showToast={showToast} reserva={reserva} pago={pago} verificar={verificar} verificando={verificando} />
+      } />}
 
       {toast && <div
         className="recibo-toast"
@@ -156,24 +168,26 @@ export default function Recibos() {
 }
 
 // ─── Panel de recibo ──────────────────────────────────────────────────────────
-function PanelRecibo({ showToast }) {
+function PanelRecibo({ showToast, reserva = null, pago = null, verificar, verificando = false }) {
+  const vinculado = !!reserva;
+  const inicial = vinculado ? datosReciboPago(reserva, pago).datos : {};
   const [propiedades, setPropiedades] = useState([]);
   const [propLoading, setPropLoading] = useState(true);
   const [depto, setDepto] = useState('');
-  const [nro, setNro] = useState('');
-  const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
-  const [monto, setMonto] = useState('');
-  const [concepto, setConcepto] = useState('reserva');
-  const [desde, setDesde] = useState('');
-  const [hasta, setHasta] = useState('');
-  const [formaPago, setFormaPago] = useState('transferencia');
-  const [comprobante, setComprobante] = useState('');
-  const [nombre, setNombre] = useState('');
-  const [dni, setDni] = useState('');
-  const [direccion, setDireccion] = useState('');
-  const [localidad, setLocalidad] = useState('');
-  const [tel, setTel] = useState('');
-  const [email, setEmail] = useState('');
+  const [nro, setNro] = useState(inicial.nro || '');
+  const [fecha, setFecha] = useState(inicial.fecha || new Date().toISOString().split('T')[0]);
+  const [monto, setMonto] = useState(inicial.monto || '');
+  const [concepto, setConcepto] = useState(inicial.concepto || 'reserva');
+  const [desde, setDesde] = useState(inicial.desde || '');
+  const [hasta, setHasta] = useState(inicial.hasta || '');
+  const [formaPago, setFormaPago] = useState(inicial.formaPago || 'transferencia');
+  const [comprobante, setComprobante] = useState(inicial.comprobante || '');
+  const [nombre, setNombre] = useState(inicial.nombre || '');
+  const [dni, setDni] = useState(inicial.dni || '');
+  const [direccion, setDireccion] = useState(inicial.direccion || '');
+  const [localidad, setLocalidad] = useState(inicial.localidad || '');
+  const [tel, setTel] = useState(inicial.tel || '');
+  const [email, setEmail] = useState(inicial.email || '');
   const [guardando, setGuardando] = useState(false);
 
   // IA parser
@@ -189,6 +203,7 @@ function PanelRecibo({ showToast }) {
   const [modoCliente, setModoCliente] = useState('buscar'); // 'buscar' | 'nuevo' | 'seleccionado'
 
   useEffect(() => {
+    if (vinculado) return;
     async function cargarPropiedades() {
       const { data } = await supabase
         .from('propiedades')
@@ -199,7 +214,7 @@ function PanelRecibo({ showToast }) {
       setPropLoading(false)
     }
     cargarPropiedades()
-  }, [])
+  }, [vinculado])
 
   useEffect(() => {
     if (busqueda.length < 2) { setClientesRes([]); return }
@@ -234,7 +249,8 @@ function PanelRecibo({ showToast }) {
     setClientesRes([])
   }
 
-  const deptoData = propiedades.find(p => p.id === depto) || {}
+  const deptoData = reserva?.propiedades || propiedades.find(p => p.id === depto) || {}
+  const conceptoTexto = `${CONCEPTOS[concepto] || concepto}${concepto === 'mensualidad' && inicial.periodo ? ` · mes ${inicial.periodo.split('-').reverse().join('/')}` : ''}`;
   const montoLetras = monto
     ? numeroALetras(Number(monto)) + ' PESOS ARGENTINOS'
     : '—';
@@ -315,13 +331,15 @@ function PanelRecibo({ showToast }) {
     else { setClienteId(data.id); showToast('✓ Cliente guardado'); }
   }
 
-  function imprimir() {
+  async function imprimir() {
+    if (verificar && !await verificar()) return;
     document.body.classList.add('printing-recibo');
     window.addEventListener('afterprint', () => document.body.classList.remove('printing-recibo'), { once: true });
     window.print();
   }
 
-  function copiarTexto() {
+  async function copiarTexto() {
+    if (verificar && !await verificar()) return;
     const d = deptoData;
     const txt = [
       `RECIBO N° ${nro || '—'}`,
@@ -332,7 +350,7 @@ function PanelRecibo({ showToast }) {
       `Recibí de ${nombre || '—'} la suma de ${fmtMonto(
         monto
       )} pesos argentinos`,
-      `(${montoLetras}) en concepto de ${CONCEPTOS[concepto] || concepto}`,
+      `(${montoLetras}) en concepto de ${conceptoTexto}`,
       `correspondiente al período ${fmtFecha(desde)} al ${fmtFecha(hasta)}.`,
       '',
       `Forma de pago: ${FORMAS[formaPago] || formaPago}`,
@@ -349,6 +367,7 @@ function PanelRecibo({ showToast }) {
 
   return (
     <>
+      {!vinculado && <>
 {/* IA Parser */}
       <div style={s.card} className="card">
         <div style={s.cardTitle}>✦ Extraer datos desde ficha del cliente</div>
@@ -587,6 +606,7 @@ function PanelRecibo({ showToast }) {
         </div>
       </div>
 
+      </>}
       {/* Vista previa del recibo */}
       <div style={s.card} className="card" id="preview-card">
         <div style={s.cardTitle} className="print-hide">
@@ -607,8 +627,8 @@ function PanelRecibo({ showToast }) {
                 fontFamily: "'Source Sans 3', sans-serif",
               }}
             >
-              <div style={s.reciboNro}>N° {nro || '—'}</div>
-              <div style={s.reciboTipo}>Recibo de reserva</div>
+              <div style={{ ...s.reciboNro, ...(vinculado ? { fontSize: 12, lineHeight: 1.5, fontFamily: 'var(--ui-font)', fontWeight: 500 } : {}), overflowWrap: 'anywhere' }}>{vinculado ? 'Ref. pago ' : 'N° '}{nro || '—'}</div>
+              <div style={s.reciboTipo}>Recibo de pago</div>
               <div style={s.reciboFecha}>{fmtFecha(fecha)}</div>
             </div>
           </div>
@@ -624,7 +644,7 @@ function PanelRecibo({ showToast }) {
               <span style={{ textTransform: 'uppercase' }}>
                 {monto ? numeroALetras(Number(monto)) : '—'}
               </span>
-              ) en concepto de <span>{CONCEPTOS[concepto] || '—'}</span> del
+              ) en concepto de <span>{conceptoTexto || '—'}</span> del
               departamento <span>{deptoData.nombre || '—'}{deptoData.direccion ? ` – ${deptoData.direccion}` : ''}</span>, correspondiente al
               período{' '}
               <strong>
@@ -635,7 +655,7 @@ function PanelRecibo({ showToast }) {
           </div>
 
           <div style={s.reciboPago}>
-            Forma de pago: {FORMAS[formaPago]}
+            Forma de pago: {FORMAS[formaPago] || formaPago}
             {comprobante ? ` Comprobante N° ${comprobante}.` : ''}
           </div>
 
@@ -681,14 +701,14 @@ function PanelRecibo({ showToast }) {
         </div>
 
         {/* Acciones */}
-        <div style={s.actionRow} className="action-row">
-          <button style={s.btnAct} onClick={imprimir}>
+        <div style={{ ...s.actionRow, ...(vinculado ? { gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' } : {}) }} className="action-row">
+          <button style={s.btnAct} onClick={imprimir} disabled={verificando}>
             🖨️ Imprimir / PDF
           </button>
-          <button style={s.btnAct} onClick={copiarTexto}>
+          <button style={s.btnAct} onClick={copiarTexto} disabled={verificando}>
             📋 Copiar texto
           </button>
-          <button
+          {!vinculado && <button
             style={{
               ...s.btnAct,
               ...s.btnActPrimary,
@@ -698,7 +718,7 @@ function PanelRecibo({ showToast }) {
             disabled={guardando || !!clienteId}
           >
             {guardando ? 'Guardando…' : clienteId ? 'Cliente guardado' : '💾 Guardar cliente'}
-          </button>
+          </button>}
         </div>
       </div>
 

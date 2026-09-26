@@ -6,6 +6,7 @@ import PagoFields from './PagoFields'
 import { datosPago, pagoVacio, mensualidades } from '../lib/operacion-reserva.js'
 import { cuotasMensuales } from '../lib/mensualidades.js'
 import PlanMensual from './PlanMensual'
+import { Link } from 'react-router-dom'
 
 export default function CobrosReserva({ reserva, onChange, mesInicial = '' }) {
   const [pagos, setPagos] = useState([])
@@ -168,7 +169,7 @@ export default function CobrosReserva({ reserva, onChange, mesInicial = '' }) {
       <ul className="cobros-historial">
         {pagos.filter(p => Number(p.monto) > 0).map(p => <li key={p.id}>
           <span>{p.tipo || 'Pago'} · <strong>{dinero(p.monto)}</strong><small>{p.fecha_recibido?.slice(0, 10).split('-').reverse().join('/') || 'Sin fecha registrada'} · {p.metodo || 'Sin medio'}{p.periodo_mes ? ` · Mes ${p.periodo_mes.slice(0, 7)}` : ''} · {p.confirmado ? 'Registrado' : 'No contabilizado'}</small></span>
-          {p.confirmado && <button className="cobros-danger" type="button" disabled={guardando} onClick={() => setAnular(p.id)}>Anular registro</button>}
+          {p.confirmado && <div className="cobros-acciones"><Link className="cobros-link" to={`/recibos?reserva_id=${reserva.id}&pago_id=${p.id}`}>Generar recibo</Link><button className="cobros-danger" type="button" disabled={guardando} onClick={() => setAnular(p.id)}>Anular registro</button></div>}
         </li>)}
       </ul>
       {!esMensual && mensualidades(pagos).length > 0 && <div className="cobros-meses"><h3>Mensualidades recibidas</h3>{mensualidades(pagos).map(([mes, monto]) => <p key={mes}>{mes.split('-').reverse().join('/')} <strong>{dinero(monto)}</strong></p>)}</div>}

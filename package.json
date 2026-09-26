@@ -6,6 +6,7 @@
   "scripts": {
     "test": "node --test src/lib/*.test.js api/lib/*.test.js api/cron/*.test.js",
     "test:ui": "node tests/ui-audit.cjs",
+    "test:gestion": "node tests/dashboard-receipts.cjs",
     "test:sql": "node --test tests/transactions.test.js",
     "dev": "vite",
     "build": "vite build",

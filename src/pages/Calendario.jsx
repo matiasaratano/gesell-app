@@ -154,6 +154,8 @@ export default function Calendario() {
   const autoSyncDoneRef = useRef(false)
   const cargaIdRef = useRef(0)
   const cargarActualRef = useRef(null)
+  const mesCargadoRef = useRef(null)
+  const syncEnCursoRef = useRef(false)
   const [year,  setYear]  = useState(hoy.getFullYear())
   const [month, setMonth] = useState(hoy.getMonth()) // 0-indexed
 
@@ -267,9 +269,10 @@ export default function Calendario() {
   }, [])
 
   // ── Carga de datos ────────────────────────────────────────────────────────────
-  const cargar = useCallback(async () => {
+  const cargar = useCallback(async ({ silencioso = false } = {}) => {
     const cargaId = ++cargaIdRef.current
-    setLoading(true)
+    const mantenerVista = silencioso && mesCargadoRef.current === `${year}-${month}`
+    if (!mantenerVista) setLoading(true)
     setError(null)
     try {
       const visibles = celdasMes(year, month)
@@ -319,8 +322,14 @@ export default function Calendario() {
       setReservas(resRes.data ?? [])
 
       setPropiedades(resProps.data ?? [])
+      mesCargadoRef.current = `${year}-${month}`
+      return true
     } catch (e) {
-      if (cargaId === cargaIdRef.current) setError('Error cargando datos: ' + e.message)
+      if (cargaId === cargaIdRef.current) {
+        if (mantenerVista) setSyncMsg('No se pudo actualizar la vista. Se muestran las fechas anteriores: ' + e.message)
+        else setError('Error cargando datos: ' + e.message)
+      }
+      return false
     } finally {
       if (cargaId === cargaIdRef.current) setLoading(false)
     }
@@ -461,8 +470,7 @@ export default function Calendario() {
     return (rows ?? []).filter((f) => f.url?.trim() && f.propiedad_id).length
   }
 
-  async function sincronizarCanal(canal, options = {}) {
-    const { silentSuccess = false } = options
+  async function sincronizarCanal(canal) {
     const feeds = (canal === 'booking' ? icalDraft.booking : icalDraft.airbnb).filter(
       (f) => f.url?.trim() && f.propiedad_id
     )
@@ -475,7 +483,6 @@ export default function Calendario() {
 
     setSyncing(canal)
     setSyncMsg('')
-    setSyncReport(null)
     try {
       let total = 0
       let totalActualizadas = 0
@@ -514,10 +521,7 @@ export default function Calendario() {
           conservadas: resultado.skipped,
         })
       }
-      await cargarActualRef.current?.()
-      setLastSyncAt(new Date())
-      if (!silentSuccess) {
-        setSyncReport({
+      return {
           canal: canal === 'booking' ? 'Booking' : 'Airbnb',
           total,
           totalReservas,
@@ -526,20 +530,16 @@ export default function Calendario() {
           totalReabiertas,
           conflictos,
           propDetalles,
-        })
       }
-      return null
     } catch (e) {
       const message = `${canal === 'booking' ? 'Booking' : 'Airbnb'}: ${e.message || String(e)}`
       setSyncMsg(message)
-      await cargarActualRef.current?.()
       return message
-    } finally {
-      setSyncing('')
     }
   }
 
   async function sincronizarTodo(options = {}) {
+    if (syncEnCursoRef.current) return
     const canales = ['booking', 'airbnb'].filter((canal) => cantidadFeeds(canal) > 0)
     if (!canales.length) {
       setSyncMsg(
@@ -548,13 +548,35 @@ export default function Calendario() {
       return
     }
 
+    syncEnCursoRef.current = true
     setSyncMsg('')
-    const errores = []
-    for (const canal of canales) {
-      const error = await sincronizarCanal(canal, options)
-      if (error) errores.push(error)
+    setSyncReport(null)
+    try {
+      const errores = []
+      const reportes = []
+      for (const canal of canales) {
+        const resultado = await sincronizarCanal(canal)
+        if (typeof resultado === 'string') errores.push(resultado)
+        else if (resultado) reportes.push(resultado)
+      }
+      // Refresh once after both channels; keep the current month mounted while reading.
+      const actualizado = await cargarActualRef.current?.({ silencioso: true })
+      if (errores.length) setSyncMsg(errores.join(' · ') + (actualizado === false ? ' · No se pudo actualizar la vista del calendario.' : ''))
+      else if (actualizado) setLastSyncAt(new Date())
+      if (!options.silentSuccess && reportes.length) {
+        const total = campo => reportes.reduce((n, r) => n + r[campo], 0)
+        setSyncReport({
+          canal: reportes.map(r => r.canal).join(' + '),
+          total: total('total'), totalReservas: total('totalReservas'), totalBloqueadas: total('totalBloqueadas'),
+          totalActualizadas: total('totalActualizadas'), totalReabiertas: total('totalReabiertas'),
+          conflictos: reportes.flatMap(r => r.conflictos),
+          propDetalles: reportes.flatMap(r => r.propDetalles.map(p => ({ ...p, nombre: `${p.nombre} · ${r.canal}` }))),
+        })
+      }
+    } finally {
+      syncEnCursoRef.current = false
+      setSyncing('')
     }
-    if (errores.length) setSyncMsg(errores.join(' · '))
   }
 
   async function guardarIcalConfig() {
@@ -921,7 +943,7 @@ export default function Calendario() {
           formatFecha={formatFecha}
         />
       ) : (
-        <div style={s.calendarWrapper}>
+        <div style={s.calendarWrapper} data-testid="calendar-grid">
           {/* Encabezado días de semana */}
           <div style={s.gridHeader}>
             {(isMobile ? DIAS_CORTO : DIAS).map(d => (

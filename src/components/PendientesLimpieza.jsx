@@ -4,13 +4,14 @@ import { supabase } from '../lib/supabase'
 import { hoyLocal, pendientesLimpieza } from '../lib/operacion-reserva.js'
 import './cobros.css'
 
-export default function PendientesLimpieza() {
+export default function PendientesLimpieza({ propiedadId = '' }) {
   const [filas, setFilas] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [guardando, setGuardando] = useState(null)
   const [revision, setRevision] = useState(0)
   const hoy = hoyLocal()
+  const visibles = filas.filter(r => !propiedadId || r.propiedad_id === propiedadId)
   useEffect(() => {
     let active = true
     async function cargar() {
@@ -39,8 +40,8 @@ export default function PendientesLimpieza() {
     if (err || !data) { setError('No se pudo guardar la limpieza.'); return }
     setRevision(v => v + 1)
   }
-  return <section className="cobros limpieza-panel"><h3>Limpieza pendiente {!loading && !error && `· ${filas.length}`}</h3>
+  return <section className="cobros limpieza-panel" aria-label="Limpieza pendiente"><h3>Limpieza pendiente {!loading && !error && `· ${visibles.length}`}</h3>
     {error && <p role="alert" className="cobros-error">{error}</p>}
-    {loading ? <p role="status">Cargando…</p> : !error && !filas.length ? <p>No hay limpiezas pendientes.</p> : <ul className="cobros-historial">{filas.map(r => <li key={r.id}><div><strong>{r.propiedades?.nombre}</strong><small>Salida {r.checkout.split('-').reverse().join('/')}</small><Link to={`/reservas/${r.id}`}>Ver reserva</Link></div><button className="cobros-primary" disabled={!!guardando} onClick={() => limpiar(r)}>{guardando === r.id ? 'Guardando…' : 'Marcar limpio'}</button></li>)}</ul>}
+    {loading ? <p role="status">Cargando…</p> : !error && !visibles.length ? <p>No hay limpiezas pendientes.</p> : <ul className="cobros-historial">{visibles.map(r => <li key={r.id}><div><strong>{r.propiedades?.nombre}</strong><small>Salida {r.checkout.split('-').reverse().join('/')}</small><Link to={`/reservas/${r.id}`}>Ver reserva</Link></div><button className="cobros-primary" disabled={!!guardando} onClick={() => limpiar(r)}>{guardando === r.id ? 'Guardando…' : 'Marcar limpio'}</button></li>)}</ul>}
   </section>
 }
