@@ -14,7 +14,8 @@ async function fetchIcsText(url) {
   return res.text()
 }
 
-import { parseIcs, upsertIcalReservas, reconciliarCierres } from '../lib/ical-sync.js'
+import { parseIcs } from '../lib/ical-sync.js'
+import { leerSnapshotIcal, sincronizarIcal } from '../lib/ical-transaction.js'
 
 // ─── Constantes ────────────────────────────────────────────────────────────────
 const MESES      = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
@@ -485,6 +486,10 @@ export default function Calendario() {
       const propDetalles = [] // { nombre, reservas: [], bloqueadas: N, actualizadas: N }
 
       const snapshots = new Map()
+      const reservasAntes = new Map()
+      for (const propiedadId of new Set(feeds.map(f => f.propiedad_id))) {
+        reservasAntes.set(propiedadId, await leerSnapshotIcal(supabaseIcal, propiedadId))
+      }
       for (const feed of feeds) {
         const text = await fetchIcsText(feed.url)
         const events = parseIcs(text)
@@ -492,9 +497,9 @@ export default function Calendario() {
       }
       for (const [propiedadId, events] of snapshots) {
         const nombreProp = propiedades.find((p) => p.id === propiedadId)?.nombre || '—'
-        const reabiertas = await reconciliarCierres(supabaseIcal, events, propiedadId, canal)
+        const resultado = await sincronizarIcal(supabaseIcal, events, propiedadId, canal, reservasAntes.get(propiedadId))
+        const { reabiertas } = resultado
         totalReabiertas += reabiertas
-        const resultado = await upsertIcalReservas(supabaseIcal, events, propiedadId, canal)
         total += events.length
         totalActualizadas += resultado.updated
         totalReservas += resultado.insertedReservas
@@ -523,8 +528,12 @@ export default function Calendario() {
           propDetalles,
         })
       }
+      return null
     } catch (e) {
-      setSyncMsg(e.message || String(e))
+      const message = `${canal === 'booking' ? 'Booking' : 'Airbnb'}: ${e.message || String(e)}`
+      setSyncMsg(message)
+      await cargarActualRef.current?.()
+      return message
     } finally {
       setSyncing('')
     }
@@ -540,9 +549,12 @@ export default function Calendario() {
     }
 
     setSyncMsg('')
+    const errores = []
     for (const canal of canales) {
-      await sincronizarCanal(canal, options)
+      const error = await sincronizarCanal(canal, options)
+      if (error) errores.push(error)
     }
+    if (errores.length) setSyncMsg(errores.join(' · '))
   }
 
   async function guardarIcalConfig() {

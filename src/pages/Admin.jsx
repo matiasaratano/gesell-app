@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase, supabaseAutomatico } from '../lib/supabase'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import CobrosReserva from '../components/CobrosReserva'
+import { useConfirmacion } from '../lib/confirmacion.js'
 
 const SECCIONES = [
   { id: 'propiedades', label: '🏠 Propiedades' },
@@ -86,7 +87,7 @@ export default function Admin() {
   }, [searchParams])
 
   return (
-    <div style={s.page}>
+    <div className="page-admin" style={s.page}>
       <h2 style={s.titulo}>Administración</h2>
 
       <div style={s.tabs}>
@@ -110,6 +111,7 @@ export default function Admin() {
 
 // ─── PROPIEDADES ──────────────────────────────────────────────────────────────
 function CRUDPropiedades() {
+  const confirmar = useConfirmacion()
   const [lista,    setLista]    = useState([])
   const [loading,  setLoading]  = useState(true)
   const [editando, setEditando] = useState(null) // null | {} | {id,...}
@@ -154,7 +156,7 @@ function CRUDPropiedades() {
   }
 
   async function eliminarPropiedad(prop) {
-    if (!confirm(`¿Eliminar permanentemente "${prop.nombre}"? Esta acción no se puede deshacer.`)) return
+    if (!await confirmar(`¿Eliminar permanentemente "${prop.nombre}"? Esta acción no se puede deshacer.`)) return
     const { error } = await supabase.from('propiedades').delete().eq('id', prop.id)
     if (error) { showToast('No se puede eliminar: ' + error.message); return }
     showToast('Propiedad eliminada')
@@ -267,6 +269,7 @@ function CRUDPropiedades() {
 
 // ─── RESERVAS ─────────────────────────────────────────────────────────────────
 export function CRUDReservas({ reservaInicial = null, onSaved, onCancel, onDeleted } = {}) {
+  const confirmar = useConfirmacion()
   const navigate = useNavigate()
   const [lista,        setLista]        = useState([])
   const [propiedades,  setPropiedades]  = useState([])
@@ -442,11 +445,14 @@ export function CRUDReservas({ reservaInicial = null, onSaved, onCancel, onDelet
   }
 
   async function eliminar(id) {
-    if (!confirm('¿Eliminar esta reserva?')) return
-    const { error: errorPagos } = await supabase.from('pagos').delete().eq('reserva_id', id)
-    if (errorPagos) { showToast('No se pudieron eliminar los pagos.'); return }
-    const { error: errorReserva } = await supabase.from('reservas').delete().eq('id', id)
-    if (errorReserva) { showToast('No se pudo eliminar la reserva.'); return }
+    if (!await confirmar('¿Eliminar esta reserva? Esta acción no se puede deshacer.')) return
+    const { error } = await supabase.rpc('eliminar_reserva_segura', { p_reserva_id: id })
+    if (error) {
+      showToast(error.code === 'PGRST202' || error.code === '42883'
+        ? 'Falta aplicar la migración 20260926_transacciones_seguras.sql. No se eliminó nada.'
+        : `No se eliminó la reserva ni sus pagos: ${error.message}`)
+      return
+    }
     onDeleted?.()
     setEditando(null)
     setDetalle(null)
@@ -834,10 +840,8 @@ export function CRUDReservas({ reservaInicial = null, onSaved, onCancel, onDelet
           }}
           onCambiarEstado={async (nuevoEstado) => {
             if (nuevoEstado === 'eliminar') {
-              await supabase.from('pagos').delete().eq('reserva_id', detalle.id)
-              await supabase.from('reservas').delete().eq('id', detalle.id)
-              showToast('Reserva eliminada')
-              setDetalle(null)
+              await eliminar(detalle.id)
+              return
             } else {
               await supabase.from('reservas').update({ estado: nuevoEstado }).eq('id', detalle.id)
               showToast('Estado actualizado')
@@ -853,6 +857,7 @@ export function CRUDReservas({ reservaInicial = null, onSaved, onCancel, onDelet
 }
 
 function ModalDetalleReserva({ reserva: r, propiedades, estados, estadoLabels, coloresEstado, onClose, onEditar, onCambiarEstado, onPago }) {
+  const confirmar = useConfirmacion()
   const waLink = r.clientes?.whatsapp
     ? `https://wa.me/${r.clientes.whatsapp.replace(/\D/g, '')}`
     : null
@@ -925,8 +930,8 @@ function ModalDetalleReserva({ reserva: r, propiedades, estados, estadoLabels, c
           </div>
 
           <button
-            onClick={() => {
-              if (confirm('¿Eliminar esta reserva?')) {
+            onClick={async () => {
+              if (await confirmar('¿Eliminar esta reserva?')) {
                 onCambiarEstado('eliminar')
               }
             }}
@@ -973,6 +978,7 @@ function DatoModal({ label, value, highlight }) {
 
 // ─── CLIENTES ─────────────────────────────────────────────────────────────────
 function CRUDClientes() {
+  const confirmar = useConfirmacion()
   const [lista,    setLista]    = useState([])
   const [loading,  setLoading]  = useState(true)
   const [editando, setEditando] = useState(null)
@@ -1036,7 +1042,7 @@ function CRUDClientes() {
   }
 
   async function eliminar(id) {
-    if (!confirm('¿Eliminar este cliente?')) return
+    if (!await confirmar('¿Eliminar este cliente? Esta acción no se puede deshacer.')) return
     const { error } = await supabase.from('clientes').delete().eq('id', id)
     if (error) { showToast('No se puede eliminar: tiene reservas asociadas'); return }
     showToast('Cliente eliminado')
@@ -1305,12 +1311,12 @@ const s = {
   filaInfo:    { display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 0 },
   filaNombre:  { fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   filaSub:     { fontSize: 12, color: '#888' },
-  filaAcciones:{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 },
+  filaAcciones:{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', maxWidth: '100%' },
 
   badge: { fontSize: 11, padding: '3px 10px', borderRadius: 20, fontWeight: 600 },
   empty: { padding: 32, textAlign: 'center', color: '#aaa', fontSize: 14 },
 
-  grid2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 },
+  grid2: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: 14 },
 
   input: {
     width: '100%', padding: '9px 12px', border: '1px solid #ddd',
@@ -1319,8 +1325,8 @@ const s = {
     appearance: 'none',
   },
 
-  footerBtns:   { display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 24, paddingTop: 16, borderTop: '1px solid #f0f0f0' },
-  btnPrimario:  { padding: '9px 20px', borderRadius: 8, border: 'none', background: '#1a1a1a', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600 },
+  footerBtns:   { display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 10, marginTop: 24, paddingTop: 16, borderTop: '1px solid #f0f0f0' },
+  btnPrimario:  { padding: '9px 20px', borderRadius: 8, border: 'none', background: 'var(--ui-primary)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600 },
   btnCancelar:  { padding: '9px 20px', borderRadius: 8, border: '1px solid #ddd', background: '#fff', cursor: 'pointer', fontSize: 14 },
   btnSm:        { padding: '6px 14px', borderRadius: 7, border: '1px solid #ddd', background: '#fff', cursor: 'pointer', fontSize: 13 },
 

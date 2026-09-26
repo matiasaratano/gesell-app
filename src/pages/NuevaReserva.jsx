@@ -68,6 +68,7 @@ export default function NuevaReserva({ onExito }) {
   const [busqueda,    setBusqueda]      = useState('')
   const [clientesRes, setClientesRes]   = useState([])
   const [clienteId,   setClienteId]     = useState(null)
+  const [clienteError, setClienteError] = useState('')
   const [clienteForm, setClienteForm]   = useState({
     nombre: '', apellido: '', dni: '', email: '',
     whatsapp: '', domicilio: '', ciudad: '',
@@ -302,11 +303,11 @@ export default function NuevaReserva({ onExito }) {
 
   // ─────────────────────────────────────────────────────────────────────────────
   return (
-    <div style={s.page}>
+    <div className="page-nueva" style={s.page}>
       <h2 style={s.titulo}>Nueva reserva</h2>
 
       {/* Indicador de pasos */}
-      <div style={s.stepper}>
+      <div className="new-stepper" style={s.stepper}>
         {PASOS.map((label, i) => (
           <div key={i} style={s.stepperItem}>
             <div style={{
@@ -387,6 +388,7 @@ export default function NuevaReserva({ onExito }) {
       {/* ── PASO 1: Cliente ────────────────────────────────────────────────── */}
       {paso === 1 && (
         <Seccion titulo="Datos del cliente">
+          {clienteError && <div role="alert" style={s.errorBox}>{clienteError}</div>}
 
           {modoCliente !== 'seleccionado' && modoCliente !== 'nuevo' && (
             <>
@@ -504,7 +506,8 @@ export default function NuevaReserva({ onExito }) {
               style={s.btnPrimario}
               onClick={() => {
                 const err = validarPaso2()
-                if (err) return alert(err)
+                if (err) return setClienteError(err)
+                setClienteError('')
                 setPaso(2)
               }}
             >
@@ -671,7 +674,7 @@ const s = {
   campo:      { marginBottom: 16 },
   campoLabel: { display: 'block', fontSize: 12, fontWeight: 600, color: '#666', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' },
   input:      { width: '100%', padding: '9px 12px', border: '1px solid #ddd', borderRadius: 8, fontSize: 14, boxSizing: 'border-box', fontFamily: 'inherit', outline: 'none' },
-  row2:       { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 },
+  row2:       { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))', gap: 16 },
   checkLabel: { display: 'flex', alignItems: 'center', fontSize: 14, cursor: 'pointer' },
   warnText:   { color: '#D97706', fontSize: 12, marginLeft: 4 },
 

@@ -1,11 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import { useConfirmacion } from '../lib/confirmacion.js';
 
 // ─── Número en letras (portado del original) ──────────────────────────────────
 function numeroALetras(n) {
   if (!n || isNaN(n)) return '';
-  n = Math.round(Number(n));
-  if (n === 0) return 'CERO';
+  const centavos = Math.round(Math.abs(Number(n)) * 100) % 100;
+  const fraccion = centavos ? ` CON ${String(centavos).padStart(2, '0')}/100` : '';
+  n = Math.sign(Number(n)) * Math.floor(Math.round(Math.abs(Number(n)) * 100) / 100);
+  if (n === 0) return 'CERO' + fraccion;
   const u = [
     '',
     'UNO',
@@ -74,7 +77,7 @@ function numeroALetras(n) {
     n %= 1000;
   }
   if (n > 0) res += grupo(n);
-  return (neg ? 'MENOS ' : '') + res.trim();
+  return (neg ? 'MENOS ' : '') + res.trim() + fraccion;
 }
 
 // ─── Propiedades desde Supabase (se cargan dinámicamente) ─────────────────────
@@ -119,7 +122,7 @@ function fmtCorta(str) {
 
 function fmtMonto(n) {
   if (!n) return '—';
-  return '$' + Number(n).toLocaleString('es-AR');
+  return '$' + Number(n).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
@@ -141,12 +144,13 @@ export default function Recibos() {
 
       {panelActivo === 'recibo' && <PanelRecibo showToast={showToast} />}
 
-      <div
+      {toast && <div
         className="recibo-toast"
+        role="status"
         style={{ ...s.toast, ...(toast ? s.toastShow : {}) }}
       >
         {toast}
-      </div>
+      </div>}
     </div>
   );
 }
@@ -280,6 +284,7 @@ function PanelRecibo({ showToast }) {
   }
 
   async function guardarCliente() {
+    if (guardando || clienteId) return;
     if (!nombre.trim()) {
       showToast('Completá al menos el nombre');
       return;
@@ -296,7 +301,7 @@ function PanelRecibo({ showToast }) {
       }
     }
     setGuardando(true);
-    const { error } = await supabase.from('clientes').insert({
+    const { data, error } = await supabase.from('clientes').insert({
       nombre,
       apellido: '',
       dni: dni || null,
@@ -304,18 +309,16 @@ function PanelRecibo({ showToast }) {
       ciudad: localidad || null,
       whatsapp: tel || null,
       email: email || null,
-    });
+    }).select('id').single();
     setGuardando(false);
     if (error) showToast('Error al guardar: ' + error.message);
-    else showToast('✓ Cliente guardado');
+    else { setClienteId(data.id); showToast('✓ Cliente guardado'); }
   }
 
   function imprimir() {
     document.body.classList.add('printing-recibo');
+    window.addEventListener('afterprint', () => document.body.classList.remove('printing-recibo'), { once: true });
     window.print();
-    setTimeout(() => {
-      document.body.classList.remove('printing-recibo');
-    }, 300);
   }
 
   function copiarTexto() {
@@ -324,7 +327,7 @@ function PanelRecibo({ showToast }) {
       `RECIBO N° ${nro || '—'}`,
       `Fecha: ${fmtFecha(fecha)}`,
       `Departamento: ${d.nombre}`,
-      `Dirección: ${d.dir}`,
+      `Dirección: ${d.direccion || '—'}`,
       '',
       `Recibí de ${nombre || '—'} la suma de ${fmtMonto(
         monto
@@ -341,7 +344,7 @@ function PanelRecibo({ showToast }) {
     ]
       .filter(Boolean)
       .join('\n');
-    navigator.clipboard.writeText(txt).then(() => showToast('Texto copiado'));
+    navigator.clipboard.writeText(txt).then(() => showToast('Texto copiado')).catch(() => showToast('No se pudo copiar. Revisá el permiso del navegador.'));
   }
 
   return (
@@ -513,6 +516,8 @@ function PanelRecibo({ showToast }) {
               type="number"
               style={s.input}
               placeholder="287000"
+              min="0"
+              step="0.01"
               value={monto}
               onChange={(e) => setMonto(e.target.value)}
             />
@@ -690,9 +695,9 @@ function PanelRecibo({ showToast }) {
               opacity: guardando ? 0.7 : 1,
             }}
             onClick={guardarCliente}
-            disabled={guardando}
+            disabled={guardando || !!clienteId}
           >
-            {guardando ? 'Guardando…' : '💾 Guardar cliente'}
+            {guardando ? 'Guardando…' : clienteId ? 'Cliente guardado' : '💾 Guardar cliente'}
           </button>
         </div>
       </div>
@@ -713,6 +718,7 @@ function InqItem({ label, val }) {
 
 // ─── Panel de inquilinos ──────────────────────────────────────────────────────
 function PanelInquilinos({ showToast }) {
+  const confirmar = useConfirmacion();
   const [inquilinos, setInquilinos] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -731,7 +737,7 @@ function PanelInquilinos({ showToast }) {
   }
 
   async function eliminar(id) {
-    if (!confirm('¿Eliminar este registro?')) return;
+    if (!await confirmar('¿Eliminar este registro?')) return;
     await supabase.from('inquilinos').delete().eq('id', id);
     showToast('Registro eliminado');
     cargar();
@@ -882,8 +888,8 @@ const s = {
     maxWidth: 820,
     margin: '0 auto',
     padding: '24px 16px 60px',
-    fontFamily: "'Source Sans 3', system-ui, sans-serif",
-    background: '#f0ece3',
+    fontFamily: 'var(--ui-font)',
+    background: 'transparent',
     minHeight: '100vh',
   },
   header: {
@@ -895,9 +901,9 @@ const s = {
     borderBottom: '1px solid #e0dbd3',
   },
   h1: {
-    fontFamily: "'Playfair Display', Georgia, serif",
+    fontFamily: 'var(--ui-font)',
     fontSize: 24,
-    fontWeight: 600,
+    fontWeight: 700,
     color: '#1a1814',
   },
   headerSub: { fontSize: 13, color: '#7a7570', fontWeight: 300 },
@@ -990,8 +996,8 @@ const s = {
     color: '#c0392b',
   },
 
-  formGrid2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 },
-  formGrid3: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 },
+  formGrid2: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))', gap: 12 },
+  formGrid3: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: 12 },
 
   input: {
     padding: '9px 12px',

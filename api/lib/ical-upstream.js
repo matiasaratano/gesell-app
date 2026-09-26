@@ -23,6 +23,7 @@ export function isAllowedIcalUrl(urlStr) {
 
 export async function fetchIcalUpstream(urlStr) {
   const r = await fetch(urlStr, {
+    signal: AbortSignal.timeout(15000),
     headers: {
       'User-Agent':
         'Mozilla/5.0 (compatible; GesellApp/1.0; calendar sync)',

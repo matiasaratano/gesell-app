@@ -1,9 +1,10 @@
 import { createClient } from '@supabase/supabase-js'
+import process from 'node:process'
 import { isAllowedIcalUrl, fetchIcalUpstream } from '../lib/ical-upstream.js'
 
 /**
  * Vercel Cron: GET /api/cron/sync-ical
- * Corre automáticamente cada hora según vercel.json.
+ * Programado diariamente a las 09:00 UTC en vercel.json.
  * También puede invocarse manualmente con el header correcto.
  *
  * Variables de entorno requeridas (server-side, NO el VITE_ prefix):
@@ -23,7 +24,8 @@ function getSupabaseAdmin() {
   })
 }
 
-import { parseIcs, upsertIcalReservas as upsertReservas, reconciliarCierres } from '../../src/lib/ical-sync.js'
+import { parseIcs } from '../../src/lib/ical-sync.js'
+import { leerSnapshotIcal, sincronizarIcal } from '../../src/lib/ical-transaction.js'
 
 // ── Handler principal ──────────────────────────────────────────────────────────
 export default async function handler(req, res) {
@@ -37,7 +39,10 @@ export default async function handler(req, res) {
   // Para llamadas manuales, debés pasar: Authorization: Bearer <CRON_SECRET>
   const authHeader = req.headers['authorization']
   const cronSecret = process.env.CRON_SECRET
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  if (!cronSecret) {
+    return res.status(503).json({ error: 'Sincronización automática sin configurar' })
+  }
+  if (authHeader !== `Bearer ${cronSecret}`) {
     return res.status(401).json({ error: 'Unauthorized' })
   }
 
@@ -62,10 +67,10 @@ export default async function handler(req, res) {
   // Armar lista de feeds a procesar
   const feeds = []
   for (const p of propiedades ?? []) {
-    if (p.link_ical_booking && isAllowedIcalUrl(p.link_ical_booking)) {
+    if (p.link_ical_booking) {
       feeds.push({ url: p.link_ical_booking, propiedadId: p.id, canal: 'booking' })
     }
-    if (p.link_ical_airbnb && isAllowedIcalUrl(p.link_ical_airbnb)) {
+    if (p.link_ical_airbnb) {
       feeds.push({ url: p.link_ical_airbnb, propiedadId: p.id, canal: 'airbnb' })
     }
   }
@@ -79,11 +84,12 @@ export default async function handler(req, res) {
   const resultados = []
   for (const feed of feeds) {
     try {
+      if (!isAllowedIcalUrl(feed.url)) throw new Error('El enlace iCal configurado no pertenece a un proveedor permitido.')
+      const snapshot = await leerSnapshotIcal(supabase, feed.propiedadId)
       const text = await fetchIcalUpstream(feed.url)
       const eventos = parseIcs(text)
-      const reabiertas = await reconciliarCierres(supabase, eventos, feed.propiedadId, feed.canal)
-      const stats = await upsertReservas(supabase, eventos, feed.propiedadId, feed.canal)
-      resultados.push({ propiedadId: feed.propiedadId, canal: feed.canal, ...stats, reabiertas })
+      const stats = await sincronizarIcal(supabase, eventos, feed.propiedadId, feed.canal, snapshot)
+      resultados.push({ propiedadId: feed.propiedadId, canal: feed.canal, ...stats })
       console.log(`[cron/sync-ical] ${feed.canal} propiedad=${feed.propiedadId}`, stats)
     } catch (e) {
       const resultado = { propiedadId: feed.propiedadId, canal: feed.canal, error: e.message }
@@ -102,5 +108,6 @@ export default async function handler(req, res) {
     // silencioso si la tabla no existe todavía
   }
 
-  return res.status(200).json({ ok: true, ejecutado_at: new Date().toISOString(), resultados })
+  const ok = resultados.every(r => !r.error)
+  return res.status(ok ? 200 : 502).json({ ok, ejecutado_at: new Date().toISOString(), resultados })
 }

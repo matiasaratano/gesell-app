@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { valorEnPeriodo, valoresPorCanal } from '../lib/reporte.js'
 
 // ─── Utilidades ───────────────────────────────────────────────────────────────
 function padZ(n) { return String(n).padStart(2, '0') }
@@ -11,10 +12,6 @@ function primerDiaMes(year, month1) {
 function ultimoDiaMes(year, month1) {
   const d = new Date(year, month1, 0)
   return `${year}-${padZ(month1)}-${padZ(d.getDate())}`
-}
-
-function diasEnMes(year, month1) {
-  return new Date(year, month1, 0).getDate()
 }
 
 function fmtPesos(n) {
@@ -57,12 +54,8 @@ export default function Reportes() {
   const [propiedades, setPropiedades] = useState([])
   const [reservas,    setReservas]    = useState([])
   const [loading,     setLoading]     = useState(true)
-
-  // Cargar propiedades una sola vez
-  useEffect(() => {
-    supabase.from('propiedades').select('id, nombre').eq('activa', true).order('nombre')
-      .then(({ data }) => setPropiedades(data ?? []))
-  }, [])
+  const [error, setError] = useState('')
+  const [revision, setRevision] = useState(0)
 
   // Sincronizar fechas cuando cambia año/mes en modo 'mes'
   useEffect(() => {
@@ -74,25 +67,31 @@ export default function Reportes() {
 
   // Cargar reservas cuando cambian filtros
   useEffect(() => {
-    if (!desde || !hasta) return
+    let active = true
+    async function cargar() {
+      setLoading(true); setError('')
+      if (!desde || !hasta || hasta < desde) { setError('Elegí un rango de fechas válido.'); setLoading(false); return }
+      try {
+        const props = await supabase.from('propiedades').select('id, nombre').eq('activa', true).order('nombre')
+        if (props.error) throw props.error
+        const filas = []
+        for (let offset = 0; ; offset += 500) {
+          let q = supabase.from('reservas')
+            .select('id, propiedad_id, checkin, checkout, noches, precio_total, estado, canal_origen, clientes(nombre, apellido), propiedades(nombre)')
+            .lte('checkin', hasta).gt('checkout', desde).order('checkin').order('id').range(offset, offset + 499)
+          if (propId !== 'todas') q = q.eq('propiedad_id', propId)
+          const { data, error: err } = await q
+          if (err) throw err
+          filas.push(...data)
+          if (data.length < 500) break
+        }
+        if (active) { setPropiedades(props.data || []); setReservas(filas) }
+      } catch { if (active) setError('No se pudo cargar el reporte. Los importes no están disponibles.') }
+      finally { if (active) setLoading(false) }
+    }
     cargar()
-  }, [desde, hasta, propId])
-
-  async function cargar() {
-    setLoading(true)
-    let q = supabase
-      .from('reservas')
-      .select('id, propiedad_id, checkin, checkout, noches, precio_total, estado, canal_origen, clientes(nombre, apellido), propiedades(nombre)')
-      .lte('checkin', hasta)
-      .gt('checkout', desde)
-      .order('checkin')
-
-    if (propId !== 'todas') q = q.eq('propiedad_id', propId)
-
-    const { data } = await q
-    setReservas(data ?? [])
-    setLoading(false)
-  }
+    return () => { active = false }
+  }, [desde, hasta, propId, revision])
 
   function navMes(dir) {
     let m = month + dir
@@ -105,7 +104,6 @@ export default function Reportes() {
 
   // ── Métricas calculadas ───────────────────────────────────────────────────
   const reales = reservas.filter(r => r.estado !== 'cerrada' && r.estado !== 'cancelada')
-  const confirmadas = reservas.filter(r => ['confirmada','activa','finalizada','señada','pendiente'].includes(r.estado))
 
   // Días del período
   const [y1,m1,d1] = desde.split('-').map(Number)
@@ -134,20 +132,8 @@ export default function Reportes() {
     return Math.max(0, Math.round((new Date(yb, mb - 1, db) - new Date(ya, ma - 1, da)) / 86400000))
   }
 
-  function calcNochesReserva(checkin, checkout) {
-    if (!checkin || !checkout) return 0
-    const [ya, ma, da] = checkin.split('-').map(Number)
-    const [yb, mb, db] = checkout.split('-').map(Number)
-    return Math.max(0, Math.round((new Date(yb, mb - 1, db) - new Date(ya, ma - 1, da)) / 86400000))
-  }
-
   function ingresoEnPeriodo(r) {
-    const precio = Number(r.precio_total || 0)
-    if (!precio) return 0
-    const nochesPeriodo = calcNochesEnPeriodo(r.checkin, r.checkout, desde, hasta)
-    const nochesReserva = r.noches || calcNochesReserva(r.checkin, r.checkout)
-    if (!nochesReserva || nochesPeriodo >= nochesReserva) return precio
-    return Math.round(precio * (nochesPeriodo / nochesReserva))
+    return valorEnPeriodo(r, desde, hasta)
   }
 
   const nochesOcupadas = reales.reduce((acc, r) => {
@@ -159,9 +145,6 @@ export default function Reportes() {
   const totalIngresos  = reales.reduce((acc, r) => acc + ingresoEnPeriodo(r), 0)
   const totalNoches    = nochesOcupadas
   const ticketPromedio = reales.length > 0 ? Math.round(totalIngresos / reales.length) : 0
-  const nocheProm      = reales.length > 0 && totalNoches > 0
-    ? Math.round(totalIngresos / totalNoches) : 0
-
   const pendientes = reservas.filter(r => r.estado === 'señada' || r.estado === 'pendiente')
   const canceladas = reservas.filter(r => r.estado === 'cancelada')
 
@@ -175,20 +158,14 @@ export default function Reportes() {
   }).filter(p => p.reservas > 0 || propId === 'todas')
 
   // Por canal
-  const canales = {}
-  reales.forEach(r => {
-    const c = r.canal_origen || 'directo'
-    if (!canales[c]) canales[c] = { count: 0, ingresos: 0 }
-    canales[c].count++
-    canales[c].ingresos += r.precio_total ?? 0
-  })
+  const canales = valoresPorCanal(reales, desde, hasta)
 
   const periodoLabel = modo === 'mes'
     ? `${MESES[month - 1]} ${year}`
     : `${fmtFecha(desde)} — ${fmtFecha(hasta)}`
 
   return (
-    <div style={s.page}>
+    <div className="page-reporte" style={s.page}>
 
       {/* Header */}
       <div style={s.header}>
@@ -220,7 +197,7 @@ export default function Reportes() {
 
           {/* Rango libre */}
           {modo === 'custom' && (
-            <div style={s.rangoRow}>
+            <div className="report-range" style={s.rangoRow}>
               <div style={s.rangoField}>
                 <label style={s.rangoLabel}>Desde</label>
                 <input type="date" style={s.input} value={desde} onChange={e => setDesde(e.target.value)} />
@@ -244,20 +221,22 @@ export default function Reportes() {
       </div>
 
       {/* ── Métricas principales ── */}
-      <div style={s.metricasGrid}>
+      {error && <div role="alert" className="cobros cobros-error">{error} <button onClick={() => setRevision(v => v + 1)}>Reintentar</button></div>}
+      {!error && !loading && <>
+      <div className="report-metrics" style={s.metricasGrid}>
         <Metrica label="Reservas" valor={reales.length} sub={`${canceladas.length} canceladas`} color="#2d5a3d" bg="#e8f0eb" />
         <Metrica label="Ocupación" valor={`${ocupacion}%`} sub={`${nochesOcupadas} de ${diasDisponibles} noches`} color="#1E40AF" bg="#DBEAFE" />
-        <Metrica label="Ingresos totales" valor={fmtPesos(totalIngresos)} sub={totalNoches > 0 ? `${fmtPesos(nocheProm)}/noche` : ''} color="#065F46" bg="#D1FAE5" grande />
+        <Metrica label="Ingresos estimados" valor={fmtPesos(totalIngresos)} sub="Precio acordado, no cobros recibidos" color="#065F46" bg="#D1FAE5" grande />
         <Metrica label="Ticket promedio" valor={fmtPesos(ticketPromedio)} sub={`${totalNoches} noches del período`} color="#374151" bg="#F3F4F6" />
       </div>
 
       {pendientes.length > 0 && (
         <div style={s.alertaPendientes}>
-          ⚠️ {pendientes.length} reserva{pendientes.length > 1 ? 's' : ''} pendiente{pendientes.length > 1 ? 's' : ''} de confirmar pago
+          ⚠️ {pendientes.length} reserva{pendientes.length > 1 ? 's' : ''} pendiente{pendientes.length > 1 ? 's' : ''} de confirmar
         </div>
       )}
 
-      <div style={s.grid2}>
+      <div className="report-grid" style={s.grid2}>
 
         {/* Por propiedad */}
         {propId === 'todas' && porProp.length > 0 && (
@@ -356,6 +335,7 @@ export default function Reportes() {
           </div>
         )}
       </Seccion>
+      </>}
     </div>
   )
 }
@@ -365,7 +345,7 @@ function Metrica({ label, valor, sub, color, bg, grande }) {
   return (
     <div style={{ ...s.metricaCard, background: bg }}>
       <div style={s.metricaLabel}>{label}</div>
-      <div style={{ ...s.metricaValor, color, fontSize: grande ? 28 : 32 }}>{valor}</div>
+      <div className="report-metric-value" style={{ ...s.metricaValor, color, fontSize: grande ? 28 : 32 }}>{valor}</div>
       {sub && <div style={{ ...s.metricaSub, color }}>{sub}</div>}
     </div>
   )
@@ -375,7 +355,7 @@ function Seccion({ titulo, children }) {
   return (
     <div style={s.card}>
       <div style={s.cardHeader}>{titulo}</div>
-      <div style={s.cardBody}>{children}</div>
+      <div className="report-section" style={s.cardBody}>{children}</div>
     </div>
   )
 }

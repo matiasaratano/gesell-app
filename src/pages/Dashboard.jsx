@@ -104,8 +104,8 @@ export default function Dashboard() {
   const [vistaTareas, setVistaTareas] = useState('pendientes')
   const [cargaTareasFallida, setCargaTareasFallida] = useState(false)
   const [errorTarea, setErrorTarea] = useState('')
-  const [propiedades,setPropiedades] = useState([])
   const [loading,    setLoading]    = useState(true)
+  const [errorCarga, setErrorCarga] = useState('')
 
   // Reloj en tiempo real
   useEffect(() => {
@@ -117,6 +117,7 @@ export default function Dashboard() {
 
   async function cargar() {
     setLoading(true)
+    setErrorCarga('')
     try {
       const hoy = hoyStr()
 
@@ -166,7 +167,7 @@ export default function Dashboard() {
         leerReservasTareas().then(data => ({ data })).catch(error => ({ error })),
       ])
 
-      setPropiedades(rProps.data ?? [])
+      if ([rProps, rAlojadas, rIngresan, rSalen, rSolicitudes].some(r => r.error)) throw new Error('No se pudo cargar el panel.')
       setAlojadas(rAlojadas.data ?? [])
       setIngresan(rIngresan.data ?? [])
       setSalen(rSalen.data ?? [])
@@ -174,7 +175,8 @@ export default function Dashboard() {
       setCargaTareasFallida(!!rTareas.error)
       setErrorTarea(rTareas.error ? 'No se pudieron cargar los pendientes. Reintentá antes de dar todo por resuelto.' : '')
       setReservasTareas(rTareas.data ?? [])
-    } catch (e) {
+    } catch {
+      setErrorCarga('No se pudo cargar el panel. Reintentá para ver la disponibilidad actual.')
       setCargaTareasFallida(true)
       setErrorTarea('No se pudo completar la carga de pendientes. Reintentá antes de dar todo por resuelto.')
     } finally {
@@ -203,7 +205,7 @@ export default function Dashboard() {
   const cerradasAhora = alojadas.filter(r => r.estado === 'cerrada')
 
   return (
-    <div style={{ ...s.page, ...(isMobile ? s.pageMobile : {}) }}>
+    <div className="page-dashboard" style={{ ...s.page, ...(isMobile ? s.pageMobile : {}) }}>
 
       {/* Header del día */}
       <div style={{ ...s.header, ...(isMobile ? s.headerMobile : {}) }}>
@@ -216,7 +218,7 @@ export default function Dashboard() {
 
       {loading ? (
         <div style={s.loadingPage}>Cargando…</div>
-      ) : (
+      ) : errorCarga ? <div className="cobros cobros-error" role="alert">{errorCarga}<div className="cobros-acciones"><button onClick={cargar}>Reintentar panel</button></div></div> : (
         <>
           {/* ── Fila 1: métricas rápidas ── */}
           <div style={{ ...s.metricasRow, ...(isMobile ? s.metricasRowMobile : {}) }}>
@@ -387,15 +389,12 @@ function FilaReserva({ reserva: r, mostrarProp }) {
     : null
 
   return (
-    <Link 
-      to={`/reservas/${r.id}`}
+    <div
       style={s.filaReservaLink}
       className="fila-clickeable"
     >
-      <div style={s.filaReservaLeft}>
-        <div style={s.nombre}>
-          {titulo}
-        </div>
+      <Link to={`/reservas/${r.id}`} style={{ ...s.filaReservaLeft, color: 'inherit', textDecoration: 'none', minHeight: 44, justifyContent: 'center' }}>
+        <span style={s.nombre}>{titulo}</span>
         <div style={s.sub}>
           {mostrarProp && r.propiedades?.nombre && (
             <span>{r.propiedades.nombre} · </span>
@@ -404,7 +403,7 @@ function FilaReserva({ reserva: r, mostrarProp }) {
           {noches > 0 && ` · ${noches}n`}
           {r.precio_total ? ` · $${Number(r.precio_total).toLocaleString('es-AR')}` : ''}
         </div>
-      </div>
+      </Link>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }} onClick={e => e.stopPropagation()}>
         <span style={{
           ...s.estadoBadge,
@@ -417,7 +416,7 @@ function FilaReserva({ reserva: r, mostrarProp }) {
           <a href={waLink} target="_blank" rel="noreferrer" style={s.btnWA} onClick={e => e.stopPropagation()}>WA</a>
         )}
       </div>
-    </Link>
+    </div>
   )
 }
 
@@ -532,7 +531,7 @@ const s = {
     padding: '10px 18px', borderBottom: '1px solid #f8f8f8', gap: 12,
     textDecoration: 'none', color: 'inherit',
   },
-  filaSolicitudLeft: { display: 'flex', flexDirection: 'column', gap: 2, flex: 1 },
+  filaSolicitudLeft: { display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 },
 
   // Tareas
   filaTareaLink: {
@@ -573,7 +572,7 @@ const s = {
   estadoBadge: { fontSize: 11, padding: '2px 9px', borderRadius: 99, fontWeight: 600, flexShrink: 0 },
 
   btnWA: {
-    padding: '4px 10px', borderRadius: 6, background: '#25D366', color: '#fff',
+    padding: '8px 10px', minHeight: 44, display: 'inline-flex', alignItems: 'center', borderRadius: 8, background: '#2d5a3d', color: '#fff',
     textDecoration: 'none', fontSize: 11, fontWeight: 600, flexShrink: 0,
   },
 

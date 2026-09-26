@@ -209,6 +209,12 @@ export default function GeneradorMensajes() {
       showToast('Seleccioná una propiedad')
       return
     }
+    if (tab === 'cotizacion' && (!cotDesde || !cotHasta || cotN <= 0 || Number(cotPxn) <= 0)) {
+      showToast('Completá fechas válidas y un precio por noche mayor a cero.'); return
+    }
+    if (tab === 'detalle' && (!detCheckin || !detCheckout || detN <= 0 || Number(detTotal) <= 0)) {
+      showToast('Completá fechas válidas y un precio total mayor a cero.'); return
+    }
     let txt = ''
     if (tab === 'cotizacion') {
       txt = genCotizacion(propiedad, { cotDesde, cotHasta, cotPxn, cotPersonas })
@@ -228,7 +234,7 @@ export default function GeneradorMensajes() {
 
   function copiar() {
     if (!resultado.trim()) { showToast('Generá una plantilla primero'); return }
-    navigator.clipboard.writeText(resultado).then(() => showToast('¡Copiado!'))
+    navigator.clipboard.writeText(resultado).then(() => showToast('¡Copiado!')).catch(() => showToast('No se pudo copiar. Revisá el permiso del navegador.'))
   }
 
   function abrirWA() {
@@ -239,17 +245,17 @@ export default function GeneradorMensajes() {
   const mostrarDepto = tab !== 'derivacion'
 
   return (
-    <div style={s.page}>
+    <div className="page-mensajes" style={s.page}>
       {/* Header */}
       <header style={s.header}>
-        <h1 style={s.h1}>Departamentos Norte</h1>
-        <span style={s.headerSub}>Generador de plantillas</span>
+        <h1 style={s.h1}>Mensajes</h1>
+        <span style={s.headerSub}>Departamentos Norte</span>
       </header>
 
       {/* Tabs */}
       <div style={s.card}>
         <div style={s.cardLabel}>Tipo de mensaje</div>
-        <div style={s.tabs}>
+        <div className="message-tabs" style={s.tabs}>
           {[
             { id: 'cotizacion',   label: '💬 Cotización' },
             { id: 'ficha',        label: '📄 Ficha' },
@@ -259,6 +265,7 @@ export default function GeneradorMensajes() {
           ].map(t => (
             <button
               key={t.id}
+              aria-pressed={tab === t.id}
               style={{ ...s.tab, ...(tab === t.id ? s.tabActive : {}) }}
               onClick={() => cambiarTab(t.id)}
             >
@@ -389,7 +396,7 @@ export default function GeneradorMensajes() {
         <div style={s.btnRow}>
           <button style={s.btnSecondary} onClick={() => {
             if (!waLink) { showToast('Generá la plantilla primero'); return }
-            navigator.clipboard.writeText(waLink).then(() => showToast('Link copiado!'))
+            navigator.clipboard.writeText(waLink).then(() => showToast('Link copiado!')).catch(() => showToast('No se pudo copiar el enlace.'))
           }}>🔗 Copiar link</button>
           <button style={{ ...s.btnSecondary, ...s.btnWA }} onClick={() => { if (waLink) window.open(waLink) }}>📲 Abrir link</button>
           <button style={s.btnSecondary} onClick={copiar}>📋 Copiar texto</button>
@@ -397,7 +404,7 @@ export default function GeneradorMensajes() {
       )}
 
       {/* Toast */}
-      <div style={{ ...s.toast, ...(toast ? s.toastShow : {}) }}>{toast}</div>
+      {toast && <div className="app-toast" role="status" style={{ ...s.toast, ...s.toastShow }}>{toast}</div>}
     </div>
   )
 }
@@ -426,8 +433,8 @@ const s = {
     maxWidth: 720,
     margin: '0 auto',
     padding: '24px 16px 48px',
-    fontFamily: "'DM Sans', system-ui, sans-serif",
-    background: '#f7f4ef',
+    fontFamily: 'var(--ui-font)',
+    background: 'transparent',
     minHeight: '100vh',
   },
   header: {
@@ -439,11 +446,11 @@ const s = {
     borderBottom: '1px solid #e0dbd3',
   },
   h1: {
-    fontFamily: "'DM Serif Display', Georgia, serif",
-    fontSize: 26,
+    fontFamily: 'var(--ui-font)',
+    fontSize: 24,
     color: '#1a1814',
     letterSpacing: '-0.3px',
-    fontWeight: 400,
+    fontWeight: 700,
   },
   headerSub: { fontSize: 13, color: '#7a7570', fontWeight: 300 },
 
@@ -524,7 +531,7 @@ const s = {
     boxSizing: 'border-box',
   },
 
-  row2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 },
+  row2: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 10 },
 
   summary: {
     display: 'flex',
@@ -565,7 +572,7 @@ const s = {
     height: 320,
     padding: 14,
     border: 'none',
-    fontFamily: "'DM Mono', 'Courier New', monospace",
+    fontFamily: 'var(--ui-font)',
     fontSize: 13,
     lineHeight: 1.6,
     color: '#1a1814',

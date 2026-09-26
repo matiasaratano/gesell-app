@@ -9,6 +9,8 @@ import Recibos from './pages/Recibos'
 import Admin from './pages/Admin'
 import Cobros from './pages/Cobros'
 import FichaReserva from './pages/FichaReserva'
+import './theme.css'
+import Confirmaciones from './components/Confirmaciones'
 
 function Toast({ msg, onClose }) {
   useEffect(() => {
@@ -19,7 +21,7 @@ function Toast({ msg, onClose }) {
   }, [msg, onClose])
   if (!msg) return null
   return (
-    <div style={{
+    <div className="app-toast" style={{
       position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
       background: '#1a1a1a', color: '#fff', padding: '12px 24px',
       borderRadius: 10, fontSize: 14, fontWeight: 500, zIndex: 200,
@@ -43,7 +45,7 @@ function Nav() {
     { to: '/reporte', label: '📊 Reporte' },
   ]
   return (
-    <nav style={{
+    <nav className="app-nav" aria-label="Navegación principal" style={{
       display: 'flex', gap: 4, padding: '10px 20px',
       borderBottom: '1px solid #e0dbd3', background: '#fff',
       position: 'sticky', top: 0, zIndex: 50, flexWrap: 'wrap',
@@ -52,6 +54,7 @@ function Nav() {
         <Link
           key={l.to}
           to={l.to}
+          aria-current={pathname === l.to ? 'page' : undefined}
           style={{
             padding: '6px 14px', borderRadius: 8, fontSize: 13, fontWeight: 500,
             textDecoration: 'none',
@@ -71,7 +74,9 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <Confirmaciones>
       <Nav />
+      <div className="app-content">
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/calendario" element={<Calendario />} />
@@ -83,7 +88,9 @@ export default function App() {
         <Route path="/reservas/:id" element={<FichaReserva />} />
         <Route path="/reporte" element={<Reporte />} />
       </Routes>
+      </div>
       <Toast msg={toastMsg} onClose={() => setToastMsg('')} />
+      </Confirmaciones>
     </BrowserRouter>
   )
 }
