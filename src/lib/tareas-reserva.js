@@ -18,7 +18,7 @@ export function tareasReservas(reservas, hoy = hoyLocal()) {
       if (!r.cliente_id) agregar('cliente', 'Falta cliente', prepararDesde, `${ficha}?accion=editar`)
       if (cobro.total === null) agregar('precio', 'Falta precio total', prepararDesde, `${ficha}?vista=pagos`)
       if (booking && !r.booking_contactado_el) agregar('contacto', 'Contactar al huésped de Booking', contactoDesde)
-      if (!mensual && cobro.requiereSena && cobro.recibido === 0) agregar('sena', booking ? 'Pedir seña · revisar condiciones de Booking' : 'Sin seña registrada', booking ? mesAnterior(r.checkin) : hoy, `${ficha}?vista=pagos`)
+      if (!mensual && cobro.requiereSena && cobro.recibido === 0) agregar('sena', booking ? 'Sin pagos registrados · verificar condiciones de cobro en Booking' : 'Sin seña registrada', booking ? mesAnterior(r.checkin) : hoy, `${ficha}?vista=pagos`)
       if (!mensual && cobro.saldo > 0 && cobro.recibido > 0) agregar('saldo', `Saldo por cobrar: ${dinero(cobro.saldo)}`, r.checkin, `${ficha}?vista=pagos`, 1)
       if (mensual && !r.plan_mensual?.length) agregar('plan', 'Definir mensualidades', hoy, `${ficha}?vista=pagos`)
     }

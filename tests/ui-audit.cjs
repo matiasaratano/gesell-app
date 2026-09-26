@@ -64,6 +64,25 @@ function match(row,u) {
    const dimensions=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,overflow:[...document.querySelectorAll('body *')].filter(e=>e.getBoundingClientRect().right>innerWidth+1&&getComputedStyle(e).position!=='fixed').slice(0,8).map(e=>({tag:e.tagName,class:e.className,text:e.textContent.slice(0,60)}))}));
    await page.screenshot({path:`${output}/${width}-${name}.png`,fullPage:true});
    results.push({width,route,...dimensions,errors:errors.slice(start)});
+   if(route==='/cobros') {
+    assert.equal(dimensions.scroll <= width, true);
+    assert.equal(await page.locator('.admin-tabla-cobros tbody tr').count(),2);
+    await page.getByRole('link',{name:'Ver cobros de Valeria Prueba',exact:true}).click();
+    await page.getByRole('button',{name:'Pagos',exact:true}).waitFor();
+   }
+   if(route==='/admin?seccion=reservas') {
+    assert.equal(dimensions.scroll <= width, true);
+    const table=page.locator('.admin-tabla-reservas');
+    assert.equal(await table.locator('tbody tr').count(),2);
+    await table.locator('.admin-fila-pendiente').getByText('Falta cliente · Falta precio',{exact:true}).waitFor();
+    await table.getByRole('link',{name:'Valeria Prueba',exact:true}).click();
+    await page.getByRole('button',{name:'Editar reserva',exact:true}).waitFor();
+   }
+   if(route==='/admin?seccion=clientes') {
+    assert.equal(dimensions.scroll <= width, true);
+    await page.getByRole('button',{name:'Ver ficha de Valeria Prueba',exact:true}).click();
+    await page.getByRole('button',{name:'Cancelar',exact:true}).first().waitFor();
+   }
   }
   if(width===390){
    await page.goto(base+'/admin?seccion=propiedades');await page.getByRole('button',{name:'Eliminar',exact:true}).first().click();

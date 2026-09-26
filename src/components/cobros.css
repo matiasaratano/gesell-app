@@ -30,11 +30,18 @@
 .ficha-datos dl { display: grid; grid-template-columns: minmax(100px, 1fr) 2fr; gap: 12px; margin-bottom: 20px; }
 .ficha-datos dt { color: #637068; }
 .ficha-datos section, .ficha-mensaje { padding: 18px 0; border-top: 1px solid #dde5df; }
+.ficha-datos section > p + button { margin-top: 14px; }
 .ficha-notas { white-space: pre-wrap; overflow-wrap: anywhere; margin: 14px 0; }
 .limpieza-panel { margin: 20px 0; padding: 16px 0; border-block: 1px solid #d9e2dc; }
 .tarea-posponer { padding: 0 16px 10px; border-bottom: 1px solid #e5e9e6; }
 .tarea-posponer .cobros-acciones { align-items: end; margin: 8px 0; }
 .pago-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.pago-fields > label { min-width: 0; grid-template-columns: minmax(0, 1fr); }
+.pago-fields input:is([type="date"], [type="month"]) {
+  display: block; width: 100%; min-width: 0; min-inline-size: 0; max-width: 100%;
+  box-sizing: border-box; -webkit-appearance: none; appearance: none;
+}
+.pago-fields input::-webkit-date-and-time-value { min-width: 0; text-align: left; }
 .cobros-meses { margin: 18px 0; padding: 12px 0; border-bottom: 1px solid #dde5df; }
 .cobros-meses p { display: flex; justify-content: space-between; gap: 12px; }
 .cobros textarea { width: 100%; padding: 12px; font: inherit; font-size: 16px; line-height: 1.5; border: 1px solid #ddd; border-radius: 8px; resize: vertical; }

@@ -39,9 +39,8 @@ a { color: var(--ui-primary); }
 .tarea-grupo h3 { font-size: 14px; line-height: 1.4; }
 .tarea-grupo h3 a { color: var(--ui-text); }
 .tarea-avisos { font-size: 14px; }
-.tarea-avisos a { text-decoration: none; }
-.tarea-avisos a:hover { text-decoration: underline; }
-.tarea-futura a { color: var(--ui-muted); }
+.tarea-avisos li { color: var(--ui-text); }
+.tarea-avisos .tarea-futura { color: var(--ui-muted); }
 .tarea-grupo .cobros-acciones { margin: 10px 0 0; }
 .tarea-grupo button { font-size: 13px; }
 .app-nav { align-items: center; }

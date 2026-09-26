@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { dinero, nombreCliente, normalizarBusqueda, resumenCobros } from '../lib/cobros'
 import CobrosReserva from '../components/CobrosReserva'
 import { cuotasMensuales } from '../lib/mensualidades.js'
+import './admin-listas.css'
 
 const etiquetas = { todos: 'Todas', 'sin-sena': 'Sin seña', 'con-sena': 'Con seña', pagada: 'Pagadas', 'sin-requisito': 'No requiere seña', mensualidades: 'Mensualidades pendientes' }
 const fecha = value => value?.split('-').reverse().join('/') || '—'
@@ -19,7 +20,6 @@ async function leerTodas(tabla, columnas) {
 }
 
 export default function Cobros() {
-  const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const [reservas, setReservas] = useState([])
   const [pagos, setPagos] = useState([])
@@ -68,7 +68,7 @@ export default function Cobros() {
   }).sort((a, b) => a.checkin.localeCompare(b.checkin))
 
   if (params.get('reserva_id')) return <Navigate to={`/reservas/${params.get('reserva_id')}?vista=pagos`} replace />
-  return <main className="cobros cobros-page">
+  return <main className="cobros cobros-page cobros-listado">
     <h1>Señas y cobros</h1>
     {error && <div role="alert" className="cobros-error">{error} <button onClick={recargar}>Reintentar</button></div>}
     {seleccionada ? <>
@@ -92,14 +92,19 @@ export default function Cobros() {
       {cargando ? <p role="status">Cargando cobros…</p> : !error && <>
         <div className="cobros-resumen-lista"><span>{lista.length} reservas</span><span>Recibido <strong>{dinero(lista.reduce((sum, r) => sum + r.cobro.recibido, 0))}</strong></span></div>
         {!lista.length && <p>No hay reservas con estos filtros.</p>}
-        <ul className="cobros-lista">{lista.map(r => <li key={r.id}>
-          <div><strong>{nombreCliente(r)}</strong><p>{r.propiedades?.nombre} · {fecha(r.checkin)} → {fecha(r.checkout)}</p>
-            <span className={`cobros-badge cobros-badge-${r.cobro.estado}`}>{etiquetas[r.cobro.estado]}</span>
-            {r.mesesPendientes.length > 0 && <p className="cobros-aviso">{r.mesesPendientes.length} mensualidad(es) por cobrar · {dinero(r.mesesPendientes.reduce((sum, c) => sum + c.saldo, 0))}</p>}
-            <div className="cobros-importes"><div><small>Total estadía</small><strong>{r.cobro.total === null ? 'A revisar' : dinero(r.cobro.total)}</strong></div><div><small>Recibido</small><strong>{dinero(r.cobro.recibido)}</strong></div><div><small>Saldo</small><strong>{r.cobro.saldo === null ? 'Sin calcular' : dinero(r.cobro.saldo)}</strong></div></div>
-          </div>
-          <button onClick={() => navigate(`/reservas/${r.id}?vista=pagos`)}>Ver cobros</button>
-        </li>)}</ul>
+        {lista.length > 0 && <div className="admin-lista"><table className="admin-tabla admin-tabla-cobros">
+          <caption className="admin-sr-only">Señas y cobros por fecha de ingreso</caption>
+          <thead><tr><th>Cliente</th><th>Departamento</th><th>Ingreso / egreso</th><th>Cobro</th><th>Total estadía</th><th>Recibido</th><th>Saldo</th></tr></thead>
+          <tbody>{lista.map(r => <tr key={r.id} className={r.mesesPendientes.length || r.cobro.total === null || r.cobro.estado === 'sin-sena' ? 'admin-fila-pendiente' : r.cobro.estado === 'pagada' ? 'admin-fila-pagada' : ''}>
+            <td className="admin-identidad"><Link to={`/reservas/${r.id}?vista=pagos`} aria-label={`Ver cobros de ${nombreCliente(r)}`}>{nombreCliente(r)}</Link>{r.mesesPendientes.length > 0 && <small className="admin-faltantes">{r.mesesPendientes.length} mensualidad(es) por cobrar · {dinero(r.mesesPendientes.reduce((sum, c) => sum + c.saldo, 0))}</small>}</td>
+            <td data-label="Departamento">{r.propiedades?.nombre || 'Sin alojamiento'}</td>
+            <td data-label="Ingreso / egreso"><span className="admin-fecha">{fecha(r.checkin)}</span><span className="admin-fecha">{fecha(r.checkout)}</span></td>
+            <td data-label="Cobro">{etiquetas[r.cobro.estado]}</td>
+            <td data-label="Total estadía" className="admin-importe">{r.cobro.total === null ? 'A revisar' : dinero(r.cobro.total)}</td>
+            <td data-label="Recibido" className="admin-importe">{dinero(r.cobro.recibido)}</td>
+            <td data-label="Saldo" className="admin-importe">{r.cobro.saldo === null ? 'Sin calcular' : dinero(r.cobro.saldo)}</td>
+          </tr>)}</tbody>
+        </table></div>}
       </>}
     </>}
   </main>

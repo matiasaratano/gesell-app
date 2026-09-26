@@ -92,6 +92,7 @@ function matches(row, url) {
         const bg = label => page.getByText(label, { exact: true }).first().evaluate(el => getComputedStyle(el.parentElement).backgroundColor);
         assert.notEqual(await bg('Ingresan hoy'), await bg('Ingresan mañana'));
         assert.deepEqual(await page.locator('.tarea-grupo h3').allTextContents(), ['Ana Prueba', 'Bruno Prueba']);
+        assert.equal(await page.locator('.tarea-avisos a, .tarea-avisos button').count(), 0, 'Warnings must not look or behave like actions');
         await page.getByRole('button', { name: 'Pospuestas · 0', exact: true }).click();
         await page.getByText('No hay tareas pospuestas', { exact: true }).waitFor();
         await page.getByRole('button', { name: 'Pendientes · 2', exact: true }).click();
@@ -105,6 +106,14 @@ function matches(row, url) {
         await page.getByText('No hay tareas pospuestas', { exact: true }).waitFor();
         await page.getByRole('button', { name: 'Pendientes · 2', exact: true }).click();
         await page.screenshot({ path: `${output}/${width}-inicio.png`, fullPage: true });
+        await page.goto(`${base}/reservas/old`);
+        const cleanButton = page.getByRole('button', { name: 'Marcar limpio', exact: true });
+        await cleanButton.waitFor();
+        const cleanGap = await cleanButton.evaluate(button => button.getBoundingClientRect().top - button.previousElementSibling.getBoundingClientRect().bottom);
+        assert.ok(cleanGap >= 14, `Cleaning action needs space below its status: ${cleanGap}px`);
+        await cleanButton.scrollIntoViewIfNeeded();
+        await page.screenshot({ path: `${output}/${width}-limpieza.png` });
+        await page.goto(base);
         await page.getByLabel('Departamento', { exact: true }).selectOption('p2');
         await page.locator('.tarea-grupo h3').filter({ hasText: 'Ana Prueba' }).waitFor({ state: 'hidden' });
         await page.getByRole('button', { name: 'Marcar limpio', exact: true }).click();
@@ -114,6 +123,12 @@ function matches(row, url) {
         const dialog = page.getByRole('dialog', { name: 'Registrar pago', exact: true });
         await dialog.getByLabel('Importe recibido', { exact: true }).fill('100,50');
         await dialog.getByLabel('Confirmar también la reserva').check();
+        const overflow = await dialog.locator('input, select').evaluateAll(inputs => inputs.filter(input => {
+          const box = input.getBoundingClientRect(), parent = input.parentElement.getBoundingClientRect();
+          return box.right > parent.right + 1 || box.left < parent.left - 1;
+        }).map(input => input.type));
+        assert.deepEqual(overflow, [], 'Payment fields must fit their labels on mobile');
+        await page.screenshot({ path: `${output}/${width}-cobro-formulario.png` });
         assert.equal(await dialog.evaluate(el => el.matches(':modal')), true);
         failPayment = true;
         await dialog.getByRole('button', { name: 'Registrar pago recibido', exact: true }).click();

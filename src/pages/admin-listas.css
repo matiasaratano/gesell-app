@@ -1,0 +1,38 @@
+.page-admin:has(.admin-lista) { max-width: 1200px !important; }
+.cobros.cobros-listado { max-width: 1200px; }
+.admin-lista { width: 100%; min-width: 0; }
+.admin-tabla { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
+.admin-tabla th { text-align: left; color: var(--ui-muted, #637068); font-weight: 600; background: #f0f3f1; }
+.admin-tabla th, .admin-tabla td { padding: 9px 10px; border-bottom: 1px solid #dde5df; vertical-align: middle; overflow-wrap: anywhere; }
+.admin-tabla tr { background: #fff; }
+.admin-tabla .admin-fila-pendiente { background: #fff9e8; }
+.admin-tabla .admin-fila-pagada { background: #edf6ef; }
+.admin-tabla .admin-fila-inactiva { background: #f1f3f3; color: #606965; }
+.admin-tabla tbody tr:hover { background: #eaf2ee; }
+.admin-tabla .admin-identidad { font-weight: 600; }
+.admin-tabla .admin-identidad small { display: block; font-size: 12px; font-weight: 400; margin-top: 3px; }
+.admin-faltantes { color: #805b12; }
+.admin-tabla a, .page-admin .admin-nombre { color: #2d5a3d; text-decoration: underline; text-underline-offset: 3px; }
+.page-admin .admin-nombre { padding: 0; border: 0; border-radius: 0; background: transparent; font: inherit; text-align: left; cursor: pointer; box-shadow: none; }
+.admin-tabla a:focus-visible, .admin-nombre:focus-visible { outline: 2px solid #2d5a3d; outline-offset: 4px; }
+.admin-tabla-reservas th:first-child { width: 23%; }
+.admin-tabla-reservas th:nth-child(2), .admin-tabla-reservas th:nth-child(3) { width: 11%; }
+.admin-tabla-reservas th:last-child { width: 7%; }
+.admin-tabla-clientes th:first-child { width: 30%; }
+.admin-tabla-clientes th:nth-child(3) { width: 32%; }
+.admin-importe { font-variant-numeric: tabular-nums; }
+.admin-tabla-cobros th:first-child { width: 23%; }
+.admin-fecha { display: block; }
+.admin-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (max-width: 700px) {
+  .admin-tabla, .admin-tabla tbody { display: block; }
+  .admin-tabla thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .admin-tabla tbody tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px 12px; padding: 10px 12px; border-bottom: 1px solid #dde5df; }
+  .admin-tabla td { display: block; border: 0; padding: 0; min-width: 0; }
+  .admin-tabla td[data-label]::before { content: attr(data-label); display: block; font-size: 11px; color: #637068; margin-bottom: 2px; }
+  .admin-tabla .admin-identidad { grid-column: 1 / -1; }
+  .admin-tabla .admin-identidad > a, .page-admin .admin-nombre { display: inline-flex; align-items: center; min-height: 44px; font-size: 14px; }
+  .admin-tabla .admin-acciones { display: flex; align-items: center; justify-content: flex-end; }
+  .admin-acciones a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 8px; }
+  .admin-tabla-clientes .admin-correo { grid-column: 1 / -1; }
+}

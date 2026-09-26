@@ -3,6 +3,13 @@ import assert from 'node:assert/strict'
 import { tareasReservas } from './tareas-reserva.js'
 
 const booking = { id: 'b1', checkin: '2027-01-10', checkout: '2027-01-20', estado: 'pendiente', canal_origen: 'booking', requiere_sena: true, pagos: [] }
+test('Booking no presupone que se puede solicitar un anticipo', () => {
+  const aviso = tareasReservas([booking], '2026-12-15')[0].avisos.find(a => a.id === 'sena')
+  assert.equal(aviso.texto, 'Sin pagos registrados · verificar condiciones de cobro en Booking')
+  assert.doesNotMatch(aviso.texto, /pedir seña/i)
+  const manual = tareasReservas([{ ...booking, canal_origen: 'directo' }], '2026-12-15')[0]
+  assert.equal(manual.avisos.find(a => a.id === 'sena').texto, 'Sin seña registrada')
+})
 test('un solo grupo por reserva y Booking futuro no exige seña ahora', () => {
   const [t] = tareasReservas([booking], '2026-09-24')
   assert.equal(t.grupo, 'futuras')

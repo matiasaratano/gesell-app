@@ -3,6 +3,7 @@ import { supabase, supabaseAutomatico } from '../lib/supabase'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import CobrosReserva from '../components/CobrosReserva'
 import { useConfirmacion } from '../lib/confirmacion.js'
+import './admin-listas.css'
 
 const SECCIONES = [
   { id: 'propiedades', label: '🏠 Propiedades' },
@@ -782,46 +783,33 @@ export function CRUDReservas({ reservaInicial = null, onSaved, onCancel, onDelet
       </div>
 
       {loading ? <Cargando /> : (
-        <div style={s.card}>
+        <div className="admin-lista">
           {reservasFiltradas.length === 0 && (
             <div style={s.empty}>
               {lista.length === 0 ? 'No hay reservas.' : 'No hay reservas con esos filtros.'}
             </div>
           )}
-          {reservasFiltradas.map(r => {
-            const ce = COLORES_ESTADO[r.estado] ?? { bg: '#f0f0f0', color: '#333' }
+          {reservasFiltradas.length > 0 && <table className="admin-tabla admin-tabla-reservas">
+            <caption className="admin-sr-only">Reservas ordenadas según el filtro seleccionado</caption>
+            <thead><tr><th>Cliente</th><th>Ingreso</th><th>Egreso</th><th>Departamento</th><th>Estado</th><th>Precio total</th><th><span className="admin-sr-only">Acciones</span></th></tr></thead>
+            <tbody>{reservasFiltradas.map(r => {
+            const cierre = r.estado === 'cerrada'
+            const faltantes = cierre || r.estado === 'cancelada' ? [] : [
+              !r.cliente_id && 'Falta cliente',
+              !(Number(r.precio_total) > 0) && 'Falta precio',
+            ].filter(Boolean)
             return (
-              <div key={r.id} style={s.fila} className="fila-clickeable"
-                onClick={() => navigate(`/reservas/${r.id}`)}>
-	                <div style={s.filaInfo}>
-	                  <span style={s.filaNombre}>
-	                    {r.clientes?.nombre ? (
-	                      nombreReservaAdmin(r)
-	                    ) : r.estado === 'cerrada' ? (
-	                      <span style={{ color: '#666', fontStyle: 'italic' }}>{tipoCierreReserva(r)}</span>
-	                    ) : (
-	                      <span style={{ color: '#D97706', fontStyle: 'italic' }}>{nombreReservaAdmin(r)}</span>
-	                    )}
-	                  </span>
-                  <span style={s.filaSub}>
-                    {r.propiedades?.nombre} · {fmt(r.checkin)} → {fmt(r.checkout)} · {r.noches} noches
-                    {r.precio_total ? ` · $${Number(r.precio_total).toLocaleString('es-AR')}` : ''}
-                  </span>
-                </div>
-                <div style={s.filaAcciones} onClick={e => e.stopPropagation()}>
-	                  <span style={{ ...s.badge, background: ce.bg, color: ce.color }}>
-	                    {r.estado === 'cerrada' ? nombreCanal(r.canal_origen) : (ESTADO_LABELS[r.estado] || r.estado)}
-	                  </span>
-                  <button style={s.btnSm} onClick={e => { e.stopPropagation(); navigate(`/reservas/${r.id}?accion=editar`) }}>Editar</button>
-                </div>
-              </div>
+              <tr key={r.id} className={faltantes.length ? 'admin-fila-pendiente' : cierre || ['finalizada', 'cancelada'].includes(r.estado) ? 'admin-fila-inactiva' : ''}>
+                <td className="admin-identidad"><Link to={`/reservas/${r.id}`}>{nombreReservaAdmin(r)}</Link>{faltantes.length > 0 && <small className="admin-faltantes">{faltantes.join(' · ')}</small>}</td>
+                <td data-label="Ingreso">{fmt(r.checkin)}</td>
+                <td data-label="Egreso">{fmt(r.checkout)}</td>
+                <td data-label="Departamento">{r.propiedades?.nombre || 'Sin departamento'}</td>
+                <td data-label="Estado">{cierre ? tipoCierreReserva(r) : (ESTADO_LABELS[r.estado] || r.estado)}</td>
+                <td data-label="Precio total" className="admin-importe">{cierre ? '—' : Number(r.precio_total) > 0 ? `$${Number(r.precio_total).toLocaleString('es-AR')}` : 'Sin cargar'}</td>
+                <td className="admin-acciones"><Link to={`/reservas/${r.id}?accion=editar`} aria-label={`Editar ${nombreReservaAdmin(r)}`}>Editar</Link></td>
+              </tr>
             )
-          })}
-          {reservasFiltradas.length > 0 && (
-            <div style={{ padding: '10px 4px', fontSize: 12, color: '#888', textAlign: 'right' }}>
-              {reservasFiltradas.length} reserva(s)
-            </div>
-          )}
+          })}</tbody></table>}
         </div>
       )}
 
@@ -1234,29 +1222,21 @@ function CRUDClientes() {
       </div>
 
       {loading ? <Cargando /> : (
-        <div style={s.card}>
+        <div className="admin-lista">
           {listaProcesada.length === 0 && <div style={s.empty}>No se encontraron clientes con estos filtros.</div>}
-          {listaProcesada.map(c => (
-            <div key={c.id} style={s.fila}>
-              <div style={s.filaInfo}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={s.filaNombre}>{c.nombre} {c.apellido}</span>
-                  {c.es_repetidor && (
-                    <span style={{
-                      fontSize: 10, fontWeight: 700, background: '#FEF3C7', color: '#92400E',
-                      padding: '2px 8px', borderRadius: 10, display: 'inline-flex', alignItems: 'center'
-                    }}>
-                      ⭐ Repetidor
-                    </span>
-                  )}
-                </div>
-                <span style={s.filaSub}>DNI {c.dni || '—'} · {c.whatsapp || 'sin WhatsApp'} · {c.ciudad || ''}</span>
-              </div>
-              <div style={s.filaAcciones}>
-                <button style={s.btnSm} onClick={() => setEditando({ ...c })}>Editar / Ver ficha</button>
-              </div>
-            </div>
-          ))}
+          {listaProcesada.length > 0 && <table className="admin-tabla admin-tabla-clientes">
+            <caption className="admin-sr-only">Clientes</caption>
+            <thead><tr><th>Cliente</th><th>WhatsApp</th><th>Correo electrónico</th><th>DNI</th></tr></thead>
+            <tbody>{listaProcesada.map(c => {
+              const sinContacto = !c.whatsapp?.trim() && !c.email?.trim()
+              return <tr key={c.id} className={sinContacto ? 'admin-fila-pendiente' : ''}>
+                <td className="admin-identidad"><button className="admin-nombre" onClick={() => setEditando({ ...c })} aria-label={`Ver ficha de ${c.nombre} ${c.apellido || ''}`} title={sinContacto ? 'Sin datos de contacto' : undefined}>{c.nombre} {c.apellido}</button>{c.es_repetidor && <small>Repetidor</small>}</td>
+                <td data-label="WhatsApp">{c.whatsapp || '—'}</td>
+                <td data-label="Correo" className="admin-correo">{c.email || '—'}</td>
+                <td data-label="DNI">{c.dni || '—'}</td>
+              </tr>
+            })}</tbody>
+          </table>}
         </div>
       )}
       <div style={{ padding: '8px 0', fontSize: 12, color: '#888', textAlign: 'right' }}>{listaProcesada.length} cliente(s) filtrado(s)</div>
