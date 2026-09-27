@@ -43,7 +43,96 @@ a { color: var(--ui-primary); }
 .tarea-avisos .tarea-futura { color: var(--ui-muted); }
 .tarea-grupo .cobros-acciones { margin: 10px 0 0; }
 .tarea-grupo button { font-size: 13px; }
+.tarea-grupo { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) 300px; align-items: center; gap: 12px; padding: 10px 14px; }
+.tarea-identidad { min-width: 0; overflow-wrap: anywhere; }
+.tarea-identidad small { display: block; }
+.tarea-grupo h3 { margin: 0 0 3px; }
+.tarea-grupo .tarea-avisos { padding: 0; margin: 0; font-size: 12px; }
+.tarea-grupo .tarea-avisos li { padding: 2px 0; line-height: 1.35; }
+.tarea-grupo .tarea-avisos small { display: inline; margin-left: 5px; }
+.tarea-grupo .tarea-acciones { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; gap: 8px; }
+.tarea-acciones > :is(button, .cobros-link) { min-width: 0; padding: 8px; text-align: center; font-size: 13px; display: flex; align-items: center; justify-content: center; }
+.tarea-grupo .tarea-posponer { grid-column: 1 / -1; }
+@media (max-width: 800px) {
+  .tarea-grupo { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .tarea-grupo .tarea-acciones { margin-top: 4px; }
+}
 .app-nav { align-items: center; }
+.recibo-pdf-actions .cobros-acciones { margin: 12px 0; }
+.recibo-acciones-unificadas { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 16px; }
+.recibo-acciones-unificadas > button { width: 100%; min-width: 0; padding: 9px 8px; }
+@media (max-width: 700px) { .recibo-acciones-unificadas { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 1fr; } }
+.recibo-pdf-dialog { margin: auto; padding: 20px; border: 1px solid var(--ui-border); border-radius: 8px; max-width: min(480px, calc(100vw - 32px)); box-sizing: border-box; }
+.recibo-pdf-dialog::backdrop { background: #0008; }
+@media print { .recibo-pdf-actions { display: none !important; } }
+.limpieza-panel { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px 20px; padding: 8px 0; margin: 12px 0; }
+.limpieza-panel h3 { font-size: 14px; margin: 0; }
+.limpieza-panel .cobros-historial > li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 4px 0; font-size: 13px; }
+.limpieza-panel .cobros-historial > li:last-child { border-bottom: 0; }
+.limpieza-panel .cobros-historial a { display: flex; align-items: center; min-height: 44px; min-width: 0; }
+.limpieza-fecha { color: var(--ui-muted); font-size: 12px; }
+.limpieza-panel .cobros-historial > li > button { width: auto; padding: 8px 10px; font-size: 13px; }
+.limpieza-panel > .cobros-error { grid-column: 1 / -1; }
+.limpieza-panel.limpieza-en-resumen { display: block; margin: 0; padding: 8px 14px; border: 0; }
+.limpieza-en-resumen > p { padding: 8px 0; font-size: 13px; color: var(--ui-muted); }
+@media (max-width: 700px) {
+  .limpieza-panel { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .limpieza-panel .cobros-historial > li { gap: 6px; }
+  .limpieza-fecha { max-width: 78px; }
+}
+.cal-rango-acciones { flex-wrap: wrap; flex-shrink: 0; max-width: 100%; }
+.cal-rango-acciones button { min-height: 44px; white-space: nowrap; line-height: 1.3; }
+.ficha-reserva h1.ficha-titulo { margin: 16px 0 8px; padding: 0; border: 0; overflow-wrap: anywhere; }
+.ficha-reserva .ficha-acciones { margin: 18px 0; }
+.ficha-cabecera { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 16px 0 8px; }
+.ficha-reserva .ficha-cabecera h1.ficha-titulo { margin: 0 !important; min-width: 0; font-size: 24px; }
+.ficha-cabecera > .cobros-link { flex-shrink: 0; }
+.ficha-reserva { font-size: 14px; }
+.ficha-reserva h3 { font-size: 16px; line-height: 1.4; }
+.ficha-reserva .cobros-detalle { margin-top: 0; padding-top: 18px; border-top: 0; }
+.ficha-reserva .cobros-totales { padding: 12px 0; margin-bottom: 12px; }
+.ficha-reserva .cobros-registro { padding-top: 12px; }
+.pago-concepto { text-transform: capitalize; }
+.ficha-reserva .cobros-section-heading { margin-bottom: 12px; }
+.ficha-reserva .cobros-section-heading small { margin: 5px 0 0; }
+.ficha-reserva .cobros-section-heading .cobros-acciones { margin: 0; }
+.ficha-reserva .cobros-registro { max-width: 600px; padding: 16px 0; margin-bottom: 16px; border-bottom: 1px solid var(--ui-border); }
+.ficha-reserva .plan-mensual { margin: 0; padding: 16px 0; border-top: 0; }
+.ficha-reserva .plan-lista > li { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(0, 2fr) auto; column-gap: 16px; padding: 12px 0; align-items: center; }
+.ficha-reserva .plan-cabecera { grid-column: 1; margin: 0; gap: 4px; }
+.ficha-reserva .plan-lista > li > small { grid-column: 1; margin: 4px 0 0; }
+.ficha-reserva .plan-lista > li > .cobros-importes { grid-column: 2; grid-row: 1 / span 2; margin: 0; font-size: 14px; }
+.ficha-reserva .plan-lista > li > .cobros-acciones { grid-column: 3; grid-row: 1 / span 2; margin: 0; }
+.ficha-reserva .plan-lista > li > :is(form, .cobros-aviso) { grid-column: 1 / -1; }
+@media (max-width: 800px) {
+  .ficha-reserva .plan-lista > li { display: block; }
+  .ficha-reserva .plan-lista > li > .cobros-importes { margin: 8px 0; }
+  .ficha-reserva .plan-lista > li > .cobros-acciones { margin-top: 8px; }
+}
+.pago-descripcion small { margin: 4px 0 0; line-height: 1.5; }
+.cobros-excluidos { margin: 14px 0; color: var(--ui-muted); font-size: 13px; }
+.cobros-excluidos summary { cursor: pointer; padding: 12px 0; min-height: 44px; box-sizing: border-box; }
+.cobros-excluidos summary:focus-visible { outline: 3px solid #367cad; outline-offset: 3px; }
+@media (max-width: 600px) {
+  .ficha-cabecera { align-items: flex-start; }
+  .ficha-cabecera > .cobros-link { flex: 0 0 125px; padding: 8px; font-size: 13px; }
+  .ficha-reserva .ficha-cabecera h1.ficha-titulo { font-size: 21px; }
+}
+.ficha-reserva .ficha-datos { padding-top: 16px; }
+.ficha-reserva .ficha-datos dl { grid-template-columns: 140px minmax(0, 1fr); gap: 8px 16px; font-size: 14px; margin: 0 0 16px; }
+.ficha-reserva .ficha-datos dd { margin: 0; font-weight: 500; }
+.ficha-reserva .ficha-datos h3 { margin: 0 0 6px; font-size: 16px; }
+.ficha-reserva .ficha-datos section { padding: 16px 0; }
+.ficha-reserva .ficha-datos section > button { border-color: #759882; background: #e8f0eb; color: #244a32; font-weight: 600; margin-top: 14px; }
+.ficha-recordatorio { max-width: 520px; padding-top: 8px; }
+.ficha-recordatorio .pago-fields { grid-template-columns: minmax(0, 280px); }
+.ficha-reserva .cobros-tabs { margin-top: 8px; }
+.ficha-reserva .cobros-tabs button[aria-pressed="false"]:hover { background: #f0f3f1; border-bottom-color: transparent; }
+@media (max-width: 700px) {
+  .cal-rango-acciones { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 1fr; align-items: stretch !important; }
+  .cal-rango-acciones button { padding: 8px !important; white-space: normal; }
+  .ficha-reserva .ficha-datos dl { grid-template-columns: 105px minmax(0, 1fr); }
+}
 .app-nav a { display: inline-flex; align-items: center; min-height: 44px; }
 .report-metrics { grid-template-columns: repeat(4, minmax(0,1fr)) !important; }
 .report-grid { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }

@@ -32,13 +32,14 @@ function match(row,u) {
  for(const width of [1440,390,320]) {
   const context=await browser.newContext({viewport:{width,height:900},locale:'es-AR',timezoneId:'America/Argentina/Buenos_Aires'});
   const page=await context.newPage();await page.clock.setFixedTime(new Date('2026-09-26T15:00:00Z'));
-  let rows=structuredClone(initialRows),fail=false,failDelete=false;
+  let rows=structuredClone(initialRows),fail=false,failDelete=false,clientListReads=0,reservationRowHeight=0;
   const errors=[],dialogs=[],writes=[];
   page.on('pageerror',e=>errors.push(e.message));page.on('dialog',async d=>{dialogs.push(d.message());await d.dismiss();});
   await context.route('**/*',async route=>{
    const req=route.request(),u=new URL(req.url());
    if(u.pathname.startsWith('/rest/v1/')) {
     const table=u.pathname.split('/').pop(),body=req.postDataJSON();
+    if(table==='clientes' && u.searchParams.get('select')==='*' && req.method()==='GET') clientListReads++;
     if(table==='eliminar_reserva_segura') {
      writes.push({table,method:req.method()});
      if(failDelete)return route.fulfill({status:400,json:{message:'Fallo simulado al eliminar',code:'P0001'}});
@@ -64,6 +65,52 @@ function match(row,u) {
    const dimensions=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,overflow:[...document.querySelectorAll('body *')].filter(e=>e.getBoundingClientRect().right>innerWidth+1&&getComputedStyle(e).position!=='fixed').slice(0,8).map(e=>({tag:e.tagName,class:e.className,text:e.textContent.slice(0,60)}))}));
    await page.screenshot({path:`${output}/${width}-${name}.png`,fullPage:true});
    results.push({width,route,...dimensions,errors:errors.slice(start)});
+   if(route==='/admin?seccion=propiedades') {
+    const admin=page.locator('.page-admin');
+    const before=await admin.boundingBox();
+    await page.getByRole('button',{name:'📅 Reservas',exact:true}).click();
+    assert.equal((await admin.boundingBox()).width,before.width);
+    await page.locator('.admin-tabla-reservas').waitFor();
+    const reads=clientListReads;
+    await page.getByRole('button',{name:'👥 Clientes',exact:true}).click();
+    assert.equal((await admin.boundingBox()).width,before.width);
+    await page.locator('.admin-tabla-clientes').waitFor();
+    await page.waitForTimeout(400);
+    assert.equal(clientListReads-reads,1,'Clients should only load once when opening the tab');
+    assert.equal((await admin.boundingBox()).width,before.width);
+   }
+   if(route==='/calendario') {
+    await page.getByRole('button',{name:/Grilla/}).click();
+    await page.locator('[data-calendar-date="2026-09-27"]').click({position:{x:5,y:5}});
+    await page.locator('[data-calendar-date="2026-09-29"]').click({position:{x:5,y:5}});
+    const actions=page.locator('.cal-rango-acciones');
+    await actions.getByRole('button',{name:'Ver reservas',exact:true}).waitFor();
+    const boxes=await actions.locator('button').evaluateAll(buttons=>buttons.map(b=>{const r=b.getBoundingClientRect();return {height:r.height,left:r.left,right:r.right};}));
+    assert.ok(boxes.every(b=>b.height>=44 && b.left>=0 && b.right<=width));
+    assert.ok(Math.max(...boxes.map(b=>b.height))-Math.min(...boxes.map(b=>b.height))<2);
+    await page.screenshot({path:`${output}/${width}-calendar-actions.png`});
+    await actions.getByRole('button',{name:'Cancelar',exact:true}).click();
+   }
+   if(route==='/reservas/r1?vista=pagos') {
+    assert.equal(await page.getByLabel('Importe recibido',{exact:true}).count(),0);
+    await page.locator('.plan-lista').getByRole('button',{name:'Registrar pago',exact:true}).click();
+    await page.getByLabel('Importe recibido',{exact:true}).waitFor();
+    assert.equal(await page.getByLabel('Mes abonado',{exact:true}).inputValue(),'2026-09');
+    await page.locator('.cobros-registro').getByRole('button',{name:'Cancelar',exact:true}).click();
+    await page.getByRole('button',{name:'Pagos registrados (0)',exact:true}).click();
+    await page.getByText('No hay pagos registrados.',{exact:true}).waitFor();
+    assert.equal(await page.locator('.plan-lista').count(),0);
+    await page.getByRole('button',{name:'Mensualidades',exact:true}).click();
+    await page.evaluate(()=>window.scrollTo(0,0));
+    await page.screenshot({path:`${output}/${width}-pagos-mensuales.png`,fullPage:true});
+    await page.getByRole('button',{name:'Datos y tareas',exact:true}).click();
+    assert.equal(await page.getByLabel('Recordar el',{exact:true}).count(),0);
+    await page.screenshot({path:`${output}/${width}-ficha-datos.png`,fullPage:true});
+    await page.getByRole('button',{name:'Recordatorio',exact:true}).click();
+    await page.getByLabel('Recordar el',{exact:true}).fill('2026-10-01');
+    assert.equal(await page.getByRole('button',{name:'Guardar fecha',exact:true}).isEnabled(),true);
+    await page.screenshot({path:`${output}/${width}-ficha-recordatorio.png`,fullPage:true});
+   }
    if(route==='/cobros') {
     assert.equal(dimensions.scroll <= width, true);
     assert.equal(await page.locator('.admin-tabla-cobros tbody tr').count(),2);
@@ -74,12 +121,14 @@ function match(row,u) {
     assert.equal(dimensions.scroll <= width, true);
     const table=page.locator('.admin-tabla-reservas');
     assert.equal(await table.locator('tbody tr').count(),2);
+    reservationRowHeight=(await table.locator('tbody tr').first().boundingBox()).height;
     await table.locator('.admin-fila-pendiente').getByText('Falta cliente · Falta precio',{exact:true}).waitFor();
     await table.getByRole('link',{name:'Valeria Prueba',exact:true}).click();
     await page.getByRole('button',{name:'Editar reserva',exact:true}).waitFor();
    }
    if(route==='/admin?seccion=clientes') {
     assert.equal(dimensions.scroll <= width, true);
+    if(width===1440) assert.ok(Math.abs((await page.locator('.admin-tabla-clientes tbody tr').first().boundingBox()).height-reservationRowHeight)<2,'Client and reservation rows should have the same compact height');
     await page.getByRole('button',{name:'Ver ficha de Valeria Prueba',exact:true}).click();
     await page.getByRole('button',{name:'Cancelar',exact:true}).first().waitFor();
    }

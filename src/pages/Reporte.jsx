@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { valorEnPeriodo, valoresPorCanal } from '../lib/reporte.js'
+import { valorEnPeriodo, valoresPorCanal, ticketTemporal } from '../lib/reporte.js'
 
 // ─── Utilidades ───────────────────────────────────────────────────────────────
 function padZ(n) { return String(n).padStart(2, '0') }
@@ -77,7 +77,7 @@ export default function Reportes() {
         const filas = []
         for (let offset = 0; ; offset += 500) {
           let q = supabase.from('reservas')
-            .select('id, propiedad_id, checkin, checkout, noches, precio_total, estado, canal_origen, clientes(nombre, apellido), propiedades(nombre)')
+            .select('id, propiedad_id, checkin, checkout, noches, precio_total, modalidad, plan_mensual, estado, canal_origen, clientes(nombre, apellido), propiedades(nombre)')
             .lte('checkin', hasta).gt('checkout', desde).order('checkin').order('id').range(offset, offset + 499)
           if (propId !== 'todas') q = q.eq('propiedad_id', propId)
           const { data, error: err } = await q
@@ -143,8 +143,8 @@ export default function Reportes() {
   const ocupacion = diasDisponibles > 0 ? Math.min(100, Math.round((nochesOcupadas / diasDisponibles) * 100)) : 0
 
   const totalIngresos  = reales.reduce((acc, r) => acc + ingresoEnPeriodo(r), 0)
-  const totalNoches    = nochesOcupadas
-  const ticketPromedio = reales.length > 0 ? Math.round(totalIngresos / reales.length) : 0
+  const sinMensualidades = reales.filter(r => ingresoEnPeriodo(r) === null)
+  const ticketPromedio = ticketTemporal(reales, desde, hasta)
   const pendientes = reservas.filter(r => r.estado === 'señada' || r.estado === 'pendiente')
   const canceladas = reservas.filter(r => r.estado === 'cancelada')
 
@@ -223,11 +223,12 @@ export default function Reportes() {
       {/* ── Métricas principales ── */}
       {error && <div role="alert" className="cobros cobros-error">{error} <button onClick={() => setRevision(v => v + 1)}>Reintentar</button></div>}
       {!error && !loading && <>
+      {sinMensualidades.length > 0 && <div className="cobros-aviso" role="alert">Importes incompletos: {sinMensualidades.length} reserva(s) mensual(es) sin cuotas definidas para todo el período. No se incluyen en los ingresos ni se estiman por noche. Completá las mensualidades en Pagos.</div>}
       <div className="report-metrics" style={s.metricasGrid}>
         <Metrica label="Reservas" valor={reales.length} sub={`${canceladas.length} canceladas`} color="#2d5a3d" bg="#e8f0eb" />
         <Metrica label="Ocupación" valor={`${ocupacion}%`} sub={`${nochesOcupadas} de ${diasDisponibles} noches`} color="#1E40AF" bg="#DBEAFE" />
-        <Metrica label="Ingresos estimados" valor={fmtPesos(totalIngresos)} sub="Precio acordado, no cobros recibidos" color="#065F46" bg="#D1FAE5" grande />
-        <Metrica label="Ticket promedio" valor={fmtPesos(ticketPromedio)} sub={`${totalNoches} noches del período`} color="#374151" bg="#F3F4F6" />
+        <Metrica label={sinMensualidades.length ? 'Ingresos parciales' : 'Ingresos estimados'} valor={fmtPesos(totalIngresos)} sub="Precio acordado, no cobros recibidos" color="#065F46" bg="#D1FAE5" grande />
+        <Metrica label="Ticket promedio temporal" valor={ticketPromedio === null ? '—' : fmtPesos(ticketPromedio)} sub={ticketPromedio === null ? 'Sin reservas temporales' : 'Valor del período por reserva temporal'} color="#374151" bg="#F3F4F6" />
       </div>
 
       {pendientes.length > 0 && (

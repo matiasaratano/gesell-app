@@ -4,6 +4,7 @@ import { useConfirmacion } from '../lib/confirmacion.js';
 import { useSearchParams } from 'react-router-dom';
 import SeleccionRecibo from '../components/SeleccionRecibo';
 import { datosReciboPago } from '../lib/recibo-pago.js';
+import ReciboPdf from '../components/ReciboPdf';
 
 // ─── Número en letras (portado del original) ──────────────────────────────────
 function numeroALetras(n) {
@@ -701,13 +702,8 @@ function PanelRecibo({ showToast, reserva = null, pago = null, verificar, verifi
         </div>
 
         {/* Acciones */}
-        <div style={{ ...s.actionRow, ...(vinculado ? { gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' } : {}) }} className="action-row">
-          <button style={s.btnAct} onClick={imprimir} disabled={verificando}>
-            🖨️ Imprimir / PDF
-          </button>
-          <button style={s.btnAct} onClick={copiarTexto} disabled={verificando}>
-            📋 Copiar texto
-          </button>
+        <ReciboPdf key={JSON.stringify([nro, fecha, monto, concepto, desde, hasta, formaPago, comprobante, nombre, dni, direccion, localidad, tel, email, deptoData])} verificar={verificar} disabled={verificando} onImprimir={imprimir} onCopiar={copiarTexto} nombre={`recibo-${(nro || fecha).replace(/[^a-zA-Z0-9-]/g, '-')}.pdf`} />
+        {!vinculado && <div style={s.actionRow} className="action-row">
           {!vinculado && <button
             style={{
               ...s.btnAct,
@@ -719,7 +715,7 @@ function PanelRecibo({ showToast, reserva = null, pago = null, verificar, verifi
           >
             {guardando ? 'Guardando…' : clienteId ? 'Cliente guardado' : '💾 Guardar cliente'}
           </button>}
-        </div>
+        </div>}
       </div>
 
       {/* Los estilos de impresión están en src/index.css */}

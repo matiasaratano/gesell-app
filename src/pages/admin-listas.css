@@ -1,4 +1,7 @@
-.page-admin:has(.admin-lista) { max-width: 1200px !important; }
+.page-admin { max-width: 1200px !important; min-height: calc(100vh - 70px); }
+.admin-cargando { min-height: 240px; padding: 32px; box-sizing: border-box; text-align: center; color: var(--ui-muted, #637068); font-size: 14px; }
+.admin-tabla-propiedades th:first-child { width: 20%; }
+.admin-tabla-propiedades th:last-child { width: 22%; }
 .cobros.cobros-listado { max-width: 1200px; }
 .admin-lista { width: 100%; min-width: 0; }
 .admin-tabla { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
@@ -20,6 +23,10 @@
 .admin-tabla-reservas th:last-child { width: 7%; }
 .admin-tabla-clientes th:first-child { width: 30%; }
 .admin-tabla-clientes th:nth-child(3) { width: 32%; }
+@media (min-width: 701px) and (pointer: fine) {
+  .page-admin .admin-tabla-clientes .admin-nombre { min-height: 0; line-height: inherit; }
+  .admin-tabla-clientes .admin-identidad small { display: inline; margin: 0 0 0 8px; }
+}
 .admin-importe { font-variant-numeric: tabular-nums; }
 .admin-tabla-cobros th:first-child { width: 23%; }
 .admin-fecha { display: block; }
@@ -35,4 +42,5 @@
   .admin-tabla .admin-acciones { display: flex; align-items: center; justify-content: flex-end; }
   .admin-acciones a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 8px; }
   .admin-tabla-clientes .admin-correo { grid-column: 1 / -1; }
+  .admin-tabla-propiedades .admin-prop-acciones { grid-column: 1 / -1; padding-top: 4px; }
 }

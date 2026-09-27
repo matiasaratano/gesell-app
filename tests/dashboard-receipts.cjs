@@ -154,6 +154,21 @@ function matches(row, url) {
         assert.equal(clients.length, 2);
         await page.evaluate(() => window.scrollTo(0, 0));
         await page.screenshot({ path: `${output}/${width}-recibo.png`, fullPage: true });
+        const pdfDownload = page.waitForEvent('download');
+        await page.getByRole('button', { name: 'Descargar PDF', exact: true }).first().click();
+        const pdf = await pdfDownload;
+        await pdf.saveAs(`${output}/${width}-recibo.pdf`);
+        assert.equal(fs.readFileSync(`${output}/${width}-recibo.pdf`).subarray(0, 4).toString(), '%PDF');
+        await page.evaluate(() => {
+          navigator.canShare = () => true;
+          navigator.share = async data => { window.sharedPdf = { type: data.files[0].type, size: data.files[0].size }; };
+        });
+        await page.getByRole('button', { name: 'Compartir PDF', exact: true }).click();
+        const shareDialog = page.getByRole('dialog', { name: 'Compartir recibo' });
+        await shareDialog.waitFor();
+        await shareDialog.getByRole('button', { name: 'Elegir aplicación', exact: true }).click();
+        assert.equal((await page.evaluate(() => window.sharedPdf)).type, 'application/pdf');
+        await shareDialog.waitFor({ state: 'hidden' });
         await page.evaluate(() => { window.printCount = 0; window.print = () => { window.printCount++; }; });
         await page.getByRole('button', { name: /Imprimir \/ PDF/ }).click();
         await page.waitForFunction(() => window.printCount === 1);
@@ -177,6 +192,16 @@ function matches(row, url) {
         await page.reload();
         await page.locator('#recibo-preview').waitFor();
         assert.match(await page.locator('#recibo-preview').innerText(), /mensualidad de alquiler · mes 09\/2026/);
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+        await page.goto(base + '/reservas/r2?vista=pagos');
+        const excluded = page.locator('.cobros-excluidos');
+        await excluded.locator('summary').waitFor();
+        assert.equal(await excluded.getAttribute('open'), null);
+        assert.equal(await page.getByRole('list', { name: 'Pagos registrados', exact: true }).locator('li').count(), 1);
+        await excluded.locator('summary').click();
+        await excluded.getByText(/No suman al recibido/).waitFor();
+        assert.equal(await excluded.locator('li').count(), 1);
+        await page.screenshot({ path: `${output}/${width}-pagos-anulados.png`, fullPage: true });
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
         calendarMode = true;
         await page.goto(base + '/calendario');

@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { hoyLocal, pendientesLimpieza } from '../lib/operacion-reserva.js'
 import './cobros.css'
 
-export default function PendientesLimpieza({ propiedadId = '' }) {
+export default function PendientesLimpieza({ propiedadId = '', Contenedor }) {
   const [filas, setFilas] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -40,8 +40,8 @@ export default function PendientesLimpieza({ propiedadId = '' }) {
     if (err || !data) { setError('No se pudo guardar la limpieza.'); return }
     setRevision(v => v + 1)
   }
-  return <section className="cobros limpieza-panel" aria-label="Limpieza pendiente"><h3>Limpieza pendiente {!loading && !error && `· ${visibles.length}`}</h3>
+  return <Contenedor titulo="Limpieza pendiente" badge={!loading && !error ? visibles.length : 0}><section className="cobros limpieza-panel limpieza-en-resumen" aria-label="Limpieza pendiente">
     {error && <p role="alert" className="cobros-error">{error}</p>}
-    {loading ? <p role="status">Cargando…</p> : !error && !visibles.length ? <p>No hay limpiezas pendientes.</p> : <ul className="cobros-historial">{visibles.map(r => <li key={r.id}><div><strong>{r.propiedades?.nombre}</strong><small>Salida {r.checkout.split('-').reverse().join('/')}</small><Link to={`/reservas/${r.id}`}>Ver reserva</Link></div><button className="cobros-primary" disabled={!!guardando} onClick={() => limpiar(r)}>{guardando === r.id ? 'Guardando…' : 'Marcar limpio'}</button></li>)}</ul>}
-  </section>
+    {loading ? <p role="status">Cargando…</p> : !error && !visibles.length ? <p>No hay limpiezas pendientes.</p> : <ul className="cobros-historial">{visibles.map(r => <li key={r.id}><Link to={`/reservas/${r.id}`}><strong>{r.propiedades?.nombre}</strong></Link><span className="limpieza-fecha">Salida {r.checkout.split('-').reverse().join('/')}</span><button className="cobros-primary" disabled={!!guardando} onClick={() => limpiar(r)}>{guardando === r.id ? 'Guardando…' : 'Marcar limpio'}</button></li>)}</ul>}
+  </section></Contenedor>
 }

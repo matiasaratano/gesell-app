@@ -248,7 +248,6 @@ export default function Dashboard() {
             />
           </div>
 
-          <PendientesLimpieza propiedadId={propiedadId} />
           <Seccion titulo="Tareas para ordenar" badge={tareasVisibles.length} style={s.tareasCard}>
             <div className="cobros"><div className="cobros-tabs">{['pendientes', 'pospuestas'].map(vista => <button key={vista} aria-pressed={vistaTareas === vista} onClick={() => setVistaTareas(vista)}>{vista === 'pendientes' ? 'Pendientes' : 'Pospuestas'} · {tareas.filter(t => vista === 'pospuestas' ? t.grupo === 'pospuestas' : t.grupo !== 'pospuestas').length}</button>)}</div></div>
             {errorTarea && <p role="alert">{errorTarea}</p>}
@@ -329,6 +328,7 @@ export default function Dashboard() {
                   salen.map(r => <FilaReserva key={r.id} reserva={r} mostrarProp />)
                 )}
               </Seccion>
+              <PendientesLimpieza propiedadId={propiedadId} Contenedor={Seccion} />
             </div>
           </div>
         </>
@@ -418,6 +418,9 @@ function FilaTarea({ tarea: t, onPosponer, onContactado, onCobrar }) {
   const [fecha, setFecha] = useState(t.pospuestaHasta || '')
   const [abierto, setAbierto] = useState(false)
   const [guardando, setGuardando] = useState(false)
+  const cobrar = t.avisos.some(a => ['sena', 'saldo'].includes(a.id) || a.id.startsWith('mes-'))
+  const completarCliente = t.avisos.some(a => a.id === 'cliente')
+  const revisarCobros = t.avisos.some(a => ['precio', 'plan'].includes(a.id))
   async function guardar(value) {
     setGuardando(true)
     const ok = await onPosponer(t.reservaId, value)
@@ -426,19 +429,20 @@ function FilaTarea({ tarea: t, onPosponer, onContactado, onCobrar }) {
   }
   return (
     <article className="cobros tarea-grupo" aria-label={`Pendientes de ${t.titulo}`}>
-    <h3><Link to={`/reservas/${t.reservaId}`}>{t.titulo}</Link></h3>
+    <div className="tarea-identidad"><h3><Link to={`/reservas/${t.reservaId}`}>{t.titulo}</Link></h3>
     <small>{t.propiedad} · {fmtFecha(t.checkin)} → {fmtFecha(t.checkout)}</small>
+    {t.pospuestaHasta > hoyStr() && <small>Recordar el {t.pospuestaHasta.split('-').reverse().join('/')}</small>}</div>
     <ul className="tarea-avisos">{t.avisos.map(a => <li key={a.id} className={a.desde > hoyStr() ? 'tarea-futura' : ''}><span>{a.texto}</span>{a.desde > hoyStr() && <small>A partir del {fmtFecha(a.desde)}</small>}</li>)}</ul>
-    <div className="cobros-acciones">
-      {t.avisos.some(a => ['sena', 'saldo', 'plan'].includes(a.id) || a.id.startsWith('mes-')) && <button onClick={() => onCobrar(t.reservaId)}>Registrar pago</button>}
-      {t.avisos.some(a => a.id === 'cliente') && <Link className="cobros-link" to={`/reservas/${t.reservaId}?accion=editar`}>Completar cliente</Link>}
-      {t.avisos.some(a => ['precio', 'plan'].includes(a.id) || a.id.startsWith('mes-')) && <Link className="cobros-link" to={`/reservas/${t.reservaId}?vista=pagos`}>Revisar cobros</Link>}
-      {t.avisos.some(a => a.id === 'contacto') && <button disabled={guardando} onClick={async () => { setGuardando(true); try { await onContactado(t.reservaId) } finally { setGuardando(false) } }}>Marcar como contactado</button>}
+    <div className="cobros-acciones tarea-acciones">
+      {completarCliente ? <Link className="cobros-link" to={`/reservas/${t.reservaId}?accion=editar`}>Completar cliente</Link>
+        : revisarCobros ? <Link className="cobros-link" to={`/reservas/${t.reservaId}?vista=pagos`}>Revisar cobros</Link>
+        : cobrar ? <button onClick={() => onCobrar(t.reservaId)}>Registrar pago</button>
+        : <button disabled={guardando} onClick={async () => { setGuardando(true); try { await onContactado(t.reservaId) } finally { setGuardando(false) } }}>Marcar como contactado</button>}
+      {t.pospuestaHasta > hoyStr() ? <button disabled={guardando} onClick={() => guardar(null)}>Reactivar</button> : <button disabled={guardando} onClick={() => setAbierto(v => !v)}>Posponer reserva</button>}
     </div>
-    <div className="cobros tarea-posponer">
-      {t.pospuestaHasta > hoyStr() && <small>Recordar el {t.pospuestaHasta.split('-').reverse().join('/')}</small>}
-      {abierto ? <div className="cobros-acciones"><label>Fecha del recordatorio<input type="date" min={hoyStr()} value={fecha} onChange={e => setFecha(e.target.value)} /></label><button disabled={guardando || !fecha || fecha < hoyStr()} onClick={() => guardar(fecha)}>Guardar fecha</button><button disabled={guardando} onClick={() => setAbierto(false)}>Cancelar</button></div> : <div className="cobros-acciones"><button onClick={() => setAbierto(true)}>Posponer reserva</button>{t.pospuestaHasta && <button disabled={guardando} onClick={() => guardar(null)}>Reactivar</button>}</div>}
-    </div>
+    {abierto && <div className="cobros tarea-posponer">
+      <div className="cobros-acciones pago-fields"><label>Fecha del recordatorio<input type="date" min={hoyStr()} value={fecha} onChange={e => setFecha(e.target.value)} /></label><button disabled={guardando || !fecha || fecha < hoyStr()} onClick={() => guardar(fecha)}>Guardar fecha</button><button disabled={guardando} onClick={() => setAbierto(false)}>Cancelar</button></div>
+    </div>}
     </article>
   )
 }

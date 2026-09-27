@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase, supabaseAutomatico } from '../lib/supabase'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import CobrosReserva from '../components/CobrosReserva'
@@ -239,28 +239,27 @@ function CRUDPropiedades() {
         <button style={s.btnPrimario} onClick={() => setEditando({ ...vacio })}>+ Nueva propiedad</button>
       </div>
       {loading ? <Cargando /> : (
-        <div style={s.card}>
+        <div className="admin-lista">
           {lista.length === 0 && <div style={s.empty}>No hay propiedades cargadas.</div>}
-          {lista.map(p => (
-            <div key={p.id} style={s.fila}>
-              <div style={s.filaInfo}>
-                <span style={s.filaNombre}>{p.nombre}</span>
-                <span style={s.filaSub}>{p.tipo} · cap. {p.capacidad_max || '?'} · {p.direccion || 'sin dirección'}</span>
-              </div>
-              <div style={s.filaAcciones}>
-                <span style={{ ...s.badge, background: p.activa ? '#D1FAE5' : '#FEE2E2', color: p.activa ? '#065F46' : '#991B1B' }}>
-                  {p.activa ? 'Activa' : 'Inactiva'}
-                </span>
-                <button style={s.btnSm} onClick={() => setEditando({ ...p })}>Editar</button>
+          {lista.length > 0 && <table className="admin-tabla admin-tabla-propiedades"><caption className="admin-sr-only">Propiedades</caption>
+            <thead><tr><th>Departamento</th><th>Tipo</th><th>Capacidad</th><th>Dirección</th><th>Estado</th><th>Acciones</th></tr></thead>
+            <tbody>{lista.map(p => (
+            <tr key={p.id} className={!p.activa ? 'admin-fila-inactiva' : ''}>
+              <td className="admin-identidad"><button className="admin-nombre" onClick={() => setEditando({ ...p })} aria-label={`Editar ${p.nombre}`}>{p.nombre}</button></td>
+              <td data-label="Tipo">{p.tipo === 'depto' ? 'Departamento' : p.tipo === 'duplex' ? 'Dúplex' : p.tipo || '—'}</td>
+              <td data-label="Capacidad">{p.capacidad_max || '—'}</td>
+              <td data-label="Dirección">{p.direccion || 'Sin dirección'}</td>
+              <td data-label="Estado">{p.activa ? 'Activa' : 'Inactiva'}</td>
+              <td className="admin-prop-acciones"><div style={s.filaAcciones}>
                 <button style={s.btnSm} onClick={() => toggleActiva(p)}>
                   {p.activa ? 'Desactivar' : 'Activar'}
                 </button>
                 <button style={{ ...s.btnSm, color: '#991B1B', borderColor: '#fca5a5' }} onClick={() => eliminarPropiedad(p)}>
                   Eliminar
                 </button>
-              </div>
-            </div>
-          ))}
+              </div></td>
+            </tr>
+          ))}</tbody></table>}
         </div>
       )}
       <Toast msg={toast} />
@@ -966,6 +965,7 @@ function DatoModal({ label, value, highlight }) {
 
 // ─── CLIENTES ─────────────────────────────────────────────────────────────────
 function CRUDClientes() {
+  const cargaId = useRef(0)
   const confirmar = useConfirmacion()
   const [lista,    setLista]    = useState([])
   const [loading,  setLoading]  = useState(true)
@@ -999,21 +999,21 @@ function CRUDClientes() {
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(''), 2200) }
 
   async function cargar(q = '') {
+    const id = ++cargaId.current
     setLoading(true)
     let query = supabase.from('clientes').select('*').order('nombre')
     if (q.length >= 2) {
       query = query.or(`nombre.ilike.%${q}%,apellido.ilike.%${q}%,dni.ilike.%${q}%`)
     }
     const { data } = await query.limit(100)
+    if (id !== cargaId.current) return
     setLista(data ?? [])
     setLoading(false)
   }
 
-  useEffect(() => { cargar() }, [])
-
   useEffect(() => {
-    const t = setTimeout(() => cargar(busqueda), 300)
-    return () => clearTimeout(t)
+    const t = setTimeout(() => cargar(busqueda), busqueda ? 300 : 0)
+    return () => { clearTimeout(t); cargaId.current++ }
   }, [busqueda])
 
   async function guardar() {
@@ -1258,7 +1258,7 @@ function Campo({ label, children, style }) {
 }
 
 function Cargando() {
-  return <div style={{ padding: 32, textAlign: 'center', color: '#888', fontSize: 14 }}>Cargando…</div>
+  return <div className="admin-cargando" role="status">Cargando…</div>
 }
 
 function Toast({ msg }) {

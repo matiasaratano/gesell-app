@@ -987,6 +987,7 @@ export default function Calendario() {
               return (
                 <div
                   key={ds}
+                  data-calendar-date={ds}
                   onClick={() => handleCellClick(ds, filtro !== 'todas' ? filtro : null)}
                   style={{
                     ...s.cell,
@@ -1178,14 +1179,14 @@ export default function Calendario() {
               </span>
             )}
           </div>
-          <div style={{
+          <div className="cal-rango-acciones" style={{
             ...s.floatingBarActions,
             justifyContent: isMobile ? 'center' : 'flex-end',
             width: isMobile ? '100%' : 'auto',
           }}>
             {rangoFin && (
               <button style={s.btnPrincipal} onClick={handleCrearReserva}>
-                ➕ Nueva Reserva
+                + Nueva Reserva
               </button>
             )}
             {rangoFin && (
@@ -1197,8 +1198,8 @@ export default function Calendario() {
               </button>
             )}
             {rangoFin && reservasSolapadas.length > 0 && (
-              <button style={s.btnModificar} onClick={handleVerModificarReservas}>
-                ✏️ {reservasSolapadas.length === 1 ? 'Modificar Reserva' : `Ver Reservas (${reservasSolapadas.length})`}
+              <button style={{ ...s.btnModificar, background: '#965022' }} onClick={handleVerModificarReservas}>
+                Ver reservas
               </button>
             )}
             <button style={s.btnCancelarRango} onClick={clearRango}>
@@ -2515,7 +2516,7 @@ const s = {
     zIndex: 900,
     boxShadow: '0 8px 32px rgba(0, 0, 0, 0.24)',
     width: 'calc(100% - 32px)',
-    maxWidth: 700,
+    maxWidth: 980,
     boxSizing: 'border-box',
     backdropFilter: 'blur(8px)',
   },
