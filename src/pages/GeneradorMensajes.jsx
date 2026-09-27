@@ -411,7 +411,7 @@ export default function GeneradorMensajes() {
 
 function Campo({ label, children }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+    <div className="campo-mensaje" style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
       <label style={{ fontSize: 12, fontWeight: 500, color: '#7a7570' }}>{label}</label>
       {children}
     </div>

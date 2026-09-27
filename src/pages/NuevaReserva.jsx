@@ -637,7 +637,7 @@ function Seccion({ titulo, children }) {
 
 function Campo({ label, children }) {
   return (
-    <div style={s.campo}>
+    <div className="campo-reserva" style={s.campo}>
       <label style={s.campoLabel}>{label}</label>
       {children}
     </div>

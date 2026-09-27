@@ -65,6 +65,19 @@ function match(row,u) {
    const dimensions=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,overflow:[...document.querySelectorAll('body *')].filter(e=>e.getBoundingClientRect().right>innerWidth+1&&getComputedStyle(e).position!=='fixed').slice(0,8).map(e=>({tag:e.tagName,class:e.className,text:e.textContent.slice(0,60)}))}));
    await page.screenshot({path:`${output}/${width}-${name}.png`,fullPage:true});
    results.push({width,route,...dimensions,errors:errors.slice(start)});
+   if(route==='/nueva' || route==='/mensajes') {
+    const checkDates=async()=>{
+     const inputs=page.locator('input[type="date"]');
+     for(let i=0;i<await inputs.count();i++) await inputs.nth(i).fill(i%2 ? '2027-01-15' : '2027-01-10');
+     const bad=await inputs.evaluateAll(fields=>fields.filter(f=>{const r=f.getBoundingClientRect(),p=f.parentElement.getBoundingClientRect();return r.right>p.right+1||r.left<p.left-1||r.height<44;}).length);
+     assert.equal(bad,0,'Date pickers must fit their fields and keep a 44px touch target');
+    };
+    await checkDates();
+    if(route==='/mensajes') for(const tab of ['Detalle','Sin disp.']) {
+     await page.getByRole('button',{name:new RegExp(tab)}).first().click();await checkDates();
+    }
+    await page.screenshot({path:`${output}/${width}-${name}-fechas.png`,fullPage:true});
+   }
    if(route==='/admin?seccion=propiedades') {
     const admin=page.locator('.page-admin');
     const before=await admin.boundingBox();

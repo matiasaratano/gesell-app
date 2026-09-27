@@ -58,6 +58,13 @@ a { color: var(--ui-primary); }
   .tarea-grupo .tarea-acciones { margin-top: 4px; }
 }
 .app-nav { align-items: center; }
+.campo-reserva, .campo-mensaje { min-width: 0; }
+:is(.page-nueva, .page-mensajes) input[type="date"] {
+  display: block; width: 100%; min-width: 0; min-inline-size: 0; max-width: 100%;
+  height: 44px; box-sizing: border-box; -webkit-appearance: none; appearance: none;
+}
+:is(.page-nueva, .page-mensajes) input[type="date"]::-webkit-date-and-time-value { min-width: 0; text-align: left; }
+:is(.page-nueva, .page-mensajes) input[type="date"]::-webkit-calendar-picker-indicator { flex-shrink: 0; margin-left: 4px; }
 .recibo-pdf-actions .cobros-acciones { margin: 12px 0; }
 .recibo-acciones-unificadas { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 16px; }
 .recibo-acciones-unificadas > button { width: 100%; min-width: 0; padding: 9px 8px; }
