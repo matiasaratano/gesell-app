@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { CRUDReservas } from './Admin'
@@ -7,6 +7,7 @@ import { nombreCliente } from '../lib/cobros.js'
 import { hoyLocal, mensajeReserva } from '../lib/operacion-reserva.js'
 import { reservaDesdeCierre } from '../lib/calendario-grid.js'
 import { mesAnterior, sumarDias } from '../lib/mensualidades.js'
+import { useConfirmacion } from '../lib/confirmacion.js'
 
 const fecha = value => value?.slice(0, 10).split('-').reverse().join('/') || '—'
 const valorHistorial = (key, value) => {
@@ -34,6 +35,8 @@ export default function FichaReservaRuta() {
 }
 
 function FichaReserva() {
+  const confirmar = useConfirmacion()
+  const eliminando = useRef(false)
   const { id } = useParams()
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
@@ -100,6 +103,19 @@ function FichaReserva() {
     if (err || !data) { setError('No se pudo abrir el cierre manual.'); return }
     navigate('/calendario')
   }
+  async function eliminarReserva() {
+    if (guardando || eliminando.current) return
+    eliminando.current = true
+    try {
+      if (!await confirmar('¿Eliminar esta reserva y todos sus registros de pago? Esta acción no se puede deshacer y no devuelve dinero al cliente.')) return
+      setGuardando(true); setError('')
+      const { error: err } = await supabase.rpc('eliminar_reserva_segura', { p_reserva_id: id })
+      if (err) throw err
+      navigate('/calendario')
+    } catch {
+      setError('No se eliminó la reserva ni sus pagos. Intentá nuevamente.')
+    } finally { eliminando.current = false; setGuardando(false) }
+  }
   if (loading) return <main className="cobros cobros-page"><p role="status">Cargando reserva…</p></main>
   if (!reserva) return <main className="cobros cobros-page"><p role="alert">{error}</p><button onClick={recargar}>Reintentar</button></main>
   if (editor) return <main className="cobros cobros-page"><CRUDReservas key={editor.id} reservaInicial={editor} onSaved={() => { setEditor(null); recargar() }} onCancel={() => setEditor(null)} onDeleted={() => navigate('/calendario')} /></main>
@@ -118,6 +134,7 @@ function FichaReserva() {
       {!cerrada && <Link className="cobros-link" to={`/recibos?reserva_id=${reserva.id}`}>Recibos de pagos</Link>}
       {cerrada && <button className="cobros-primary" onClick={() => setEditor(reservaDesdeCierre(reserva))}>Asignar inquilino</button>}
       {cerrada && manual && <button onClick={() => setAbrir(true)}>Abrir cierre manual</button>}
+      <button className="cobros-danger" disabled={guardando} onClick={eliminarReserva}>Eliminar reserva</button>
     </div>
     {abrir && <div className="cobros-aviso"><p>¿Abrir este cierre manual? Estas fechas quedarán disponibles si no hay otro bloqueo.</p><div className="cobros-acciones"><button disabled={guardando} onClick={reabrir}>Abrir cierre</button><button onClick={() => setAbrir(false)}>Cancelar</button></div></div>}
     {error && <p role="alert" className="cobros-error">{error}</p>}

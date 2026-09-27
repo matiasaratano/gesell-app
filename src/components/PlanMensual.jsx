@@ -18,8 +18,12 @@ export default function PlanMensual({ reserva, pagos, onCobrar, onChange, disabl
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState('')
   const [mensaje, setMensaje] = useState('')
+  const [vista, setVista] = useState('pendientes')
   const ocupado = useRef(false)
   const cuotas = cuotasMensuales({ ...reserva, plan_mensual: plan }, pagos)
+  const pendientes = cuotas.filter(c => c.estado !== 'pagado')
+  const pagadas = cuotas.filter(c => c.estado === 'pagado')
+  const visibles = vista === 'pagadas' ? pagadas : pendientes
   const sinAsignar = mensualidades(pagos).filter(([mes]) => !plan.some(c => c.mes.slice(0, 7) === mes))
   const sinMes = pagos.filter(p => p.confirmado && Number(p.monto) > 0 && (p.tipo !== 'mensualidad' || !p.periodo_mes))
     .reduce((sum, p) => sum + Math.round(Number(p.monto) * 100), 0) / 100
@@ -68,7 +72,9 @@ export default function PlanMensual({ reserva, pagos, onCobrar, onChange, disabl
       <div className="cobros-acciones"><button className="cobros-primary" disabled={bloqueado}>Guardar mensualidades</button><button type="button" disabled={guardando} onClick={() => setAgregando(false)}>Cancelar</button></div>
     </form>}
     {!cuotas.length && <p>Sin mensualidades programadas.</p>}
-    <ul className="plan-lista">{cuotas.map(c => <li key={c.mes}>
+    {cuotas.length > 0 && <div className="cobros-tabs" aria-label="Estado de mensualidades">{[['pendientes', 'Pendientes', pendientes.length], ['pagadas', 'Pagadas', pagadas.length]].map(([key, label, cantidad]) => <button key={key} type="button" aria-pressed={vista === key} disabled={guardando} onClick={() => { setVista(key); setEdicion(null); setEliminar(null) }}>{label} ({cantidad})</button>)}</div>}
+    {cuotas.length > 0 && !visibles.length && <p>{vista === 'pagadas' ? 'No hay mensualidades pagadas.' : 'No hay mensualidades pendientes.'}</p>}
+    <ul className="plan-lista">{visibles.map(c => <li key={c.mes}>
       <div className="plan-cabecera"><strong>{mesLabel(c.mes)}</strong><span className={`cobros-badge ${c.vencida || c.estado === 'parcial' ? 'cobros-badge-sin-sena' : c.estado === 'pagado' ? 'cobros-badge-pagada' : 'cobros-badge-sin-requisito'}`}>{c.estado === 'pagado' ? 'Pagado' : c.estado === 'parcial' ? 'Parcial' : 'Pendiente'}{c.vencida ? ' · Vencida' : ''}</span></div>
       <small>Vence {fecha(c.vencimiento)}</small>
       {(c.mes.slice(0, 7) < limites.min || c.mes.slice(0, 7) > limites.max) && <p className="cobros-aviso">Mes fuera de las fechas actuales de la estadía.</p>}

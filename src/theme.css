@@ -98,11 +98,13 @@ a { color: var(--ui-primary); }
 .ficha-reserva .cobros-section-heading .cobros-acciones { margin: 0; }
 .ficha-reserva .cobros-registro { max-width: 600px; padding: 16px 0; margin-bottom: 16px; border-bottom: 1px solid var(--ui-border); }
 .ficha-reserva .plan-mensual { margin: 0; padding: 16px 0; border-top: 0; }
-.ficha-reserva .plan-lista > li { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(0, 2fr) auto; column-gap: 16px; padding: 12px 0; align-items: center; }
+.ficha-reserva .plan-lista > li { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(0, 2fr) 260px; column-gap: 16px; padding: 12px 0; align-items: center; }
 .ficha-reserva .plan-cabecera { grid-column: 1; margin: 0; gap: 4px; }
 .ficha-reserva .plan-lista > li > small { grid-column: 1; margin: 4px 0 0; }
 .ficha-reserva .plan-lista > li > .cobros-importes { grid-column: 2; grid-row: 1 / span 2; margin: 0; font-size: 14px; }
-.ficha-reserva .plan-lista > li > .cobros-acciones { grid-column: 3; grid-row: 1 / span 2; margin: 0; }
+.ficha-reserva .plan-lista > li > .cobros-acciones { grid-column: 3; grid-row: 1 / span 2; margin: 0; justify-content: flex-end; }
+.ficha-reserva .plan-cabecera > strong { text-transform: none; }
+.ficha-reserva .plan-cabecera > strong::first-letter { text-transform: uppercase; }
 .ficha-reserva .plan-lista > li > :is(form, .cobros-aviso) { grid-column: 1 / -1; }
 @media (max-width: 800px) {
   .ficha-reserva .plan-lista > li { display: block; }

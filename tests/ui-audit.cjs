@@ -92,6 +92,10 @@ function match(row,u) {
     await actions.getByRole('button',{name:'Cancelar',exact:true}).click();
    }
    if(route==='/reservas/r1?vista=pagos') {
+    await page.getByRole('button',{name:'Pagadas (0)',exact:true}).click();
+    await page.getByText('No hay mensualidades pagadas.',{exact:true}).waitFor();
+    assert.equal(await page.locator('.plan-lista > li').count(),0);
+    await page.getByRole('button',{name:'Pendientes (1)',exact:true}).click();
     assert.equal(await page.getByLabel('Importe recibido',{exact:true}).count(),0);
     await page.locator('.plan-lista').getByRole('button',{name:'Registrar pago',exact:true}).click();
     await page.getByLabel('Importe recibido',{exact:true}).waitFor();
@@ -134,6 +138,23 @@ function match(row,u) {
    }
   }
   if(width===390){
+   await page.goto(base+'/reservas/r1');
+   const deleteDirect=page.getByRole('button',{name:'Eliminar reserva',exact:true});
+   const directConfirm=page.getByRole('dialog',{name:'Confirmar eliminación'});
+   const writesBefore=writes.length;
+   await deleteDirect.click();await directConfirm.waitFor();
+   await directConfirm.getByText(/todos sus registros de pago/).waitFor();
+   await directConfirm.getByRole('button',{name:'Cancelar',exact:true}).click();
+   assert.equal(writes.length,writesBefore);
+   failDelete=true;
+   await deleteDirect.click();await directConfirm.getByRole('button',{name:'Eliminar',exact:true}).click();
+   await page.getByRole('alert').filter({hasText:'No se eliminó la reserva ni sus pagos'}).waitFor();
+   assert.ok(rows.some(r=>r.id==='r1'));
+   failDelete=false;
+   await deleteDirect.click();await directConfirm.getByRole('button',{name:'Eliminar',exact:true}).click();
+   await page.waitForURL('**/calendario');
+   assert.ok(!rows.some(r=>r.id==='r1'));
+   rows=structuredClone(initialRows);
    await page.goto(base+'/admin?seccion=propiedades');await page.getByRole('button',{name:'Eliminar',exact:true}).first().click();
    const confirm=page.getByRole('dialog',{name:'Confirmar eliminación'});await confirm.waitFor();
    assert.equal(await confirm.evaluate(e=>e.matches(':modal')),true);await page.keyboard.press('Escape');await confirm.waitFor({state:'hidden'});
