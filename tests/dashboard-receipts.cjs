@@ -151,6 +151,16 @@ function matches(row, url) {
         await page.getByRole('button', { name: 'Guardar datos del cliente', exact: true }).click();
         await page.locator('#recibo-preview').waitFor();
         assert.match(await page.locator('#recibo-preview').innerText(), /100,50/);
+        await page.locator('#recibo-preview img[alt="Firma"]').evaluate(img => img.decode());
+        assert.ok(await page.locator('#recibo-preview img[alt="Firma"]').evaluate(img => img.naturalWidth > 0));
+        assert.equal(await page.locator('.recibo-acciones-unificadas button').count(), 4);
+        await page.getByRole('button', { name: 'Enviar por mail', exact: true }).click();
+        const mailDialog = page.getByRole('dialog', { name: 'Enviar recibo por mail', exact: true });
+        await mailDialog.waitFor();
+        const mailUrl = new URL(await mailDialog.getByRole('link', { name: 'Abrir correo', exact: true }).getAttribute('href'));
+        assert.equal(mailUrl.protocol, 'mailto:');
+        assert.match(mailUrl.searchParams.get('body'), /100,50/);
+        await mailDialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
         assert.equal(clients.length, 2);
         await page.evaluate(() => window.scrollTo(0, 0));
         await page.screenshot({ path: `${output}/${width}-recibo.png`, fullPage: true });

@@ -4,6 +4,7 @@ async function crearPdf(nombre) {
   const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import('html2canvas'), import('jspdf')])
   const node = document.getElementById('recibo-preview')
   if (!node) throw new Error('No hay un recibo disponible.')
+  await Promise.all([...node.querySelectorAll('img')].map(img => img.decode()))
   const canvas = await html2canvas(node, {
     scale: 2, backgroundColor: '#ffffff', logging: false, windowWidth: 1200,
     onclone: doc => {

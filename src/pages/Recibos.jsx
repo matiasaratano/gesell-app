@@ -5,7 +5,7 @@ import { useSearchParams } from 'react-router-dom';
 import SeleccionRecibo from '../components/SeleccionRecibo';
 import { datosReciboPago } from '../lib/recibo-pago.js';
 import ReciboPdf from '../components/ReciboPdf';
-import { enlaceMailRecibo } from '../lib/recibo-mail.js';
+import firmaUrl from '../../firma.png';
 
 // ─── Número en letras (portado del original) ──────────────────────────────────
 function numeroALetras(n) {
@@ -101,24 +101,32 @@ const FORMAS = {
   otro: 'Otro medio de pago.',
 };
 
+const MESES = [
+  'enero',
+  'febrero',
+  'marzo',
+  'abril',
+  'mayo',
+  'junio',
+  'julio',
+  'agosto',
+  'septiembre',
+  'octubre',
+  'noviembre',
+  'diciembre',
+];
+
 function fmtFecha(str) {
   if (!str) return '—';
   const [y, m, d] = str.split('-');
-  const meses = [
-    'enero',
-    'febrero',
-    'marzo',
-    'abril',
-    'mayo',
-    'junio',
-    'julio',
-    'agosto',
-    'septiembre',
-    'octubre',
-    'noviembre',
-    'diciembre',
-  ];
-  return `${parseInt(d)} de ${meses[parseInt(m) - 1]} de ${y}`;
+  return `${parseInt(d)} de ${MESES[parseInt(m) - 1]} de ${y}`;
+}
+
+// 'YYYY-MM' -> 'septiembre de 2026'
+function fmtMes(periodo) {
+  if (!periodo) return '';
+  const [y, m] = periodo.split('-');
+  return `${MESES[parseInt(m) - 1]} de ${y}`;
 }
 
 function fmtCorta(str) {
@@ -191,6 +199,8 @@ function PanelRecibo({ showToast, reserva = null, pago = null, verificar, verifi
   const [tel, setTel] = useState(inicial.tel || '');
   const [email, setEmail] = useState(inicial.email || '');
   const [guardando, setGuardando] = useState(false);
+  const [correo, setCorreo] = useState(null);
+  const correoDialog = useRef(null);
 
   // IA parser
   const [fichaTexto, setFichaTexto] = useState('');
@@ -252,7 +262,9 @@ function PanelRecibo({ showToast, reserva = null, pago = null, verificar, verifi
   }
 
   const deptoData = reserva?.propiedades || propiedades.find(p => p.id === depto) || {}
-  const conceptoTexto = `${CONCEPTOS[concepto] || concepto}${concepto === 'mensualidad' && inicial.periodo ? ` · mes ${inicial.periodo.split('-').reverse().join('/')}` : ''}`;
+  const esMensualidad = concepto === 'mensualidad' && !!inicial.periodo;
+  const mesTexto = esMensualidad ? fmtMes(inicial.periodo) : '';
+  const conceptoTexto = esMensualidad ? 'alquiler' : (CONCEPTOS[concepto] || concepto);
   const montoLetras = monto
     ? numeroALetras(Number(monto)) + ' PESOS ARGENTINOS'
     : '—';
@@ -352,8 +364,12 @@ function PanelRecibo({ showToast, reserva = null, pago = null, verificar, verifi
       `Recibí de ${nombre || '—'} la suma de ${fmtMonto(
         monto
       )} pesos argentinos`,
-      `(${montoLetras}) en concepto de ${conceptoTexto}`,
-      `correspondiente al período ${fmtFecha(desde)} al ${fmtFecha(hasta)}.`,
+      esMensualidad
+        ? `(${montoLetras}) en concepto de alquiler correspondiente al mes de ${mesTexto}.`
+        : `(${montoLetras}) en concepto de ${conceptoTexto}`,
+      esMensualidad
+        ? null
+        : `correspondiente al período ${fmtFecha(desde)} al ${fmtFecha(hasta)}.`,
       '',
       `Forma de pago: ${FORMAS[formaPago] || formaPago}`,
       comprobante ? `Comprobante: ${comprobante}` : '',
@@ -364,7 +380,14 @@ function PanelRecibo({ showToast, reserva = null, pago = null, verificar, verifi
     ]
       .filter(Boolean)
       .join('\n');
-    window.location.href = enlaceMailRecibo(email, `Recibo de pago${nro ? ` N° ${nro}` : ''}`, txt);
+    const asunto = `Recibo de pago${nro ? ` N° ${nro}` : ''}`;
+    const gmailUrl =
+      'https://mail.google.com/mail/?view=cm&fs=1' +
+      `&to=${encodeURIComponent(email || '')}` +
+      `&su=${encodeURIComponent(asunto)}` +
+      `&body=${encodeURIComponent(txt)}`;
+    setCorreo({ url: gmailUrl, txt });
+    correoDialog.current.showModal();
   }
 
   return (
@@ -647,11 +670,19 @@ function PanelRecibo({ showToast, reserva = null, pago = null, verificar, verifi
                 {monto ? numeroALetras(Number(monto)) : '—'}
               </span>
               ) en concepto de <span>{conceptoTexto || '—'}</span> del
-              departamento <span>{deptoData.nombre || '—'}{deptoData.direccion ? ` – ${deptoData.direccion}` : ''}</span>, correspondiente al
-              período{' '}
-              <strong>
-                {fmtFecha(desde)} al {fmtFecha(hasta)}
-              </strong>
+              departamento <span>{deptoData.nombre || '—'}{deptoData.direccion ? ` – ${deptoData.direccion}` : ''}</span>, correspondiente al{' '}
+              {esMensualidad ? (
+                <>
+                  mes de <strong>{mesTexto}</strong>
+                </>
+              ) : (
+                <>
+                  período{' '}
+                  <strong>
+                    {fmtFecha(desde)} al {fmtFecha(hasta)}
+                  </strong>
+                </>
+              )}
               .
             </p>
           </div>
@@ -664,7 +695,7 @@ function PanelRecibo({ showToast, reserva = null, pago = null, verificar, verifi
           {/* Firma */}
           <div style={s.reciboFirma}>
             <img
-              src="/firma.png"
+              src={firmaUrl}
               alt="Firma"
               style={{
                 maxHeight: 64,
@@ -696,14 +727,26 @@ function PanelRecibo({ showToast, reserva = null, pago = null, verificar, verifi
             </div>
           </div>
 
-          <div style={s.reciboPie}>
-            Alquiler {deptoData.nombre || '—'}. Desde el {fmtFecha(desde)} hasta el{' '}
-            {fmtFecha(hasta)}.
-          </div>
+          {!esMensualidad && (
+            <div style={s.reciboPie}>
+              Alquiler {deptoData.nombre || '—'}. Desde el {fmtFecha(desde)} hasta el{' '}
+              {fmtFecha(hasta)}.
+            </div>
+          )}
         </div>
 
         {/* Acciones */}
         <ReciboPdf key={JSON.stringify([nro, fecha, monto, concepto, desde, hasta, formaPago, comprobante, nombre, dni, direccion, localidad, tel, email, deptoData])} verificar={verificar} disabled={verificando} onImprimir={imprimir} onMail={enviarMail} nombre={`recibo-${(nro || fecha).replace(/[^a-zA-Z0-9-]/g, '-')}.pdf`} />
+        <dialog ref={correoDialog} className="cobros recibo-pdf-dialog" aria-label="Enviar recibo por mail" onClose={() => setCorreo(null)}>
+          <h3>Enviar recibo por mail</h3>
+          <p>Destinatario: {email || 'A completar en tu correo'}</p>
+          <div className="cobros-acciones">
+            {correo && <a className="cobros-link" href={correo.url} target="_blank" rel="noopener noreferrer">Abrir correo</a>}
+            <button onClick={() => navigator.clipboard.writeText(correo?.txt || '').then(() => showToast('Texto copiado')).catch(() => showToast('No se pudo copiar el texto.'))}>Copiar texto</button>
+            <button onClick={() => correoDialog.current.close()}>Cerrar</button>
+          </div>
+          <p>Si no se abre, probá desde Safari o Chrome y revisá que tengas una aplicación de correo predeterminada.</p>
+        </dialog>
         {!vinculado && <div style={s.actionRow} className="action-row">
           {!vinculado && <button
             style={{
