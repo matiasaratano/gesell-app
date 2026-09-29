@@ -1,3 +1,3 @@
 export function enlaceMailRecibo(email, asunto, texto) {
-  return `mailto:${encodeURIComponent((email || '').trim())}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(texto)}`
+  return `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent((email || '').trim())}&su=${encodeURIComponent(asunto)}&body=${encodeURIComponent(texto)}`
 }

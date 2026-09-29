@@ -69,7 +69,7 @@ export default function ReciboPdf({ verificar, disabled, nombre, onImprimir, onM
   }
 
   return <div className="cobros recibo-pdf-actions">
-    <div className="recibo-acciones-unificadas"><button onClick={onImprimir} disabled={disabled || ocupado}>Imprimir / PDF</button><button onClick={onMail} disabled={disabled || ocupado}>Enviar por mail</button><button onClick={() => preparar(true)} disabled={disabled || ocupado}>Compartir PDF</button><button onClick={() => preparar(false)} disabled={disabled || ocupado}>Descargar PDF</button></div>
+    <div className="recibo-acciones-unificadas"><button onClick={onImprimir} disabled={disabled || ocupado}>Imprimir / PDF</button><button onClick={onMail} disabled={disabled || ocupado}>Abrir en Gmail</button><button onClick={() => preparar(true)} disabled={disabled || ocupado}>Compartir PDF</button><button onClick={() => preparar(false)} disabled={disabled || ocupado}>Descargar PDF</button></div>
     {ocupado && <p role="status">Preparando PDF…</p>}
     {mensaje && <p role="status">{mensaje}</p>}
     <dialog ref={dialog} className="recibo-pdf-dialog" aria-label="Compartir recibo" onClose={() => setArchivo(null)}>

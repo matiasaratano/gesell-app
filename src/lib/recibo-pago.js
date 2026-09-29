@@ -5,7 +5,7 @@ export function datosReciboPago(reserva, pago) {
   const c = reserva?.clientes || {}
   const d = reserva?.propiedades || {}
   const datos = {
-    nro: pago?.numero_recibo ? `REC-${new Date().getFullYear()}-${String(pago.numero_recibo).padStart(4, '0')}` : '', fecha: pago?.fecha_recibido?.slice(0, 10) || '', monto: pago?.monto ?? '',
+    nro: pago?.numero_recibo && fechaValida(pago?.fecha_recibido?.slice(0, 10)) ? `REC-${pago.fecha_recibido.slice(0, 4)}-${String(pago.numero_recibo).padStart(4, '0')}` : '', fecha: pago?.fecha_recibido?.slice(0, 10) || '', monto: pago?.monto ?? '',
     concepto: pago?.tipo === 'seña' ? 'reserva' : pago?.tipo || '',
     desde: reserva?.checkin || '', hasta: reserva?.checkout || '', formaPago: pago?.metodo || '',
     comprobante: pago?.comprobante_ref || '', nombre: [c.nombre, c.apellido].filter(Boolean).join(' ').trim(),

@@ -6,6 +6,7 @@ import SeleccionRecibo from '../components/SeleccionRecibo';
 import { datosReciboPago } from '../lib/recibo-pago.js';
 import ReciboPdf from '../components/ReciboPdf';
 import firmaUrl from '../../firma.png';
+import { enlaceMailRecibo } from '../lib/recibo-mail.js';
 
 // ─── Número en letras (portado del original) ──────────────────────────────────
 function numeroALetras(n) {
@@ -381,11 +382,7 @@ function PanelRecibo({ showToast, reserva = null, pago = null, verificar, verifi
       .filter(Boolean)
       .join('\n');
     const asunto = `Recibo de pago${nro ? ` N° ${nro}` : ''}`;
-    const gmailUrl =
-      'https://mail.google.com/mail/?view=cm&fs=1' +
-      `&to=${encodeURIComponent(email || '')}` +
-      `&su=${encodeURIComponent(asunto)}` +
-      `&body=${encodeURIComponent(txt)}`;
+    const gmailUrl = enlaceMailRecibo(email, asunto, txt);
     setCorreo({ url: gmailUrl, txt });
     correoDialog.current.showModal();
   }
@@ -652,7 +649,7 @@ function PanelRecibo({ showToast, reserva = null, pago = null, verificar, verifi
                 fontFamily: "'Source Sans 3', sans-serif",
               }}
             >
-              <div style={{ ...s.reciboNro, ...(vinculado ? { fontSize: 12, lineHeight: 1.5, fontFamily: 'var(--ui-font)', fontWeight: 500 } : {}), overflowWrap: 'anywhere' }}>{vinculado ? 'Ref. pago ' : 'N° '}{nro || '—'}</div>
+              <div style={{ ...s.reciboNro, ...(vinculado ? { fontSize: 12, lineHeight: 1.5, fontFamily: 'var(--ui-font)', fontWeight: 500 } : {}), overflowWrap: 'anywhere' }}>N° {nro || '—'}</div>
               <div style={s.reciboTipo}>Recibo de pago</div>
               <div style={s.reciboFecha}>{fmtFecha(fecha)}</div>
             </div>
@@ -741,11 +738,11 @@ function PanelRecibo({ showToast, reserva = null, pago = null, verificar, verifi
           <h3>Enviar recibo por mail</h3>
           <p>Destinatario: {email || 'A completar en tu correo'}</p>
           <div className="cobros-acciones">
-            {correo && <a className="cobros-link" href={correo.url} target="_blank" rel="noopener noreferrer">Abrir correo</a>}
+            {correo && <a className="cobros-link" href={correo.url} target="_blank" rel="noopener noreferrer">Abrir en Gmail</a>}
             <button onClick={() => navigator.clipboard.writeText(correo?.txt || '').then(() => showToast('Texto copiado')).catch(() => showToast('No se pudo copiar el texto.'))}>Copiar texto</button>
             <button onClick={() => correoDialog.current.close()}>Cerrar</button>
           </div>
-          <p>Si no se abre, probá desde Safari o Chrome y revisá que tengas una aplicación de correo predeterminada.</p>
+          <p>Se abrirá un borrador en Gmail con el texto del recibo, sin PDF adjunto. Revisá la cuenta antes de enviarlo.</p>
         </dialog>
         {!vinculado && <div style={s.actionRow} className="action-row">
           {!vinculado && <button

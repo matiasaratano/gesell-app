@@ -5,13 +5,18 @@ import { datosReciboPago } from './recibo-pago.js'
 const reserva = { id: 'r1', cliente_id: 'c1', checkin: '2027-01-01', checkout: '2027-01-10',
   clientes: { nombre: 'Ana', apellido: 'Prueba', dni: '12345', domicilio: 'Calle 123', ciudad: 'Buenos Aires' },
   propiedades: { nombre: 'Depto 1', direccion: 'Avenida 456' } }
-const pago = { id: 'pago1', reserva_id: 'r1', monto: 25000.50, fecha_recibido: '2026-12-01', tipo: 'seña', metodo: 'transferencia', confirmado: true }
+const pago = { id: 'pago1', numero_recibo: 12, reserva_id: 'r1', monto: 25000.50, fecha_recibido: '2026-12-01', tipo: 'seña', metodo: 'transferencia', confirmado: true }
 test('receipt comes from the actual payment, preserves cents and does not require email or phone', () => {
   const { datos, faltantes } = datosReciboPago(reserva, pago)
   assert.deepEqual(faltantes, [])
   assert.equal(datos.monto, 25000.50)
-  assert.equal(datos.nro, pago.id)
+  assert.equal(datos.nro, 'REC-2026-0012')
   assert.equal(datos.concepto, 'reserva')
+})
+test('el año del recibo corresponde al cobro, no al día de consulta', t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2028-01-01T12:00:00Z') })
+  assert.equal(datosReciboPago(reserva, pago).datos.nro, 'REC-2026-0012')
+  assert.equal(datosReciboPago(reserva, { ...pago, fecha_recibido: '2027-01-01', numero_recibo: 12345 }).datos.nro, 'REC-2027-12345')
 })
 test('missing guest, property and payment fields block emission', () => {
   const { faltantes } = datosReciboPago({ ...reserva, clientes: {}, propiedades: {} }, { ...pago, fecha_recibido: '', metodo: '' })
