@@ -150,6 +150,20 @@ function match(row,u) {
     await page.getByRole('button',{name:'Cancelar',exact:true}).first().waitFor();
    }
   }
+  for (const [channel, label, href] of [['booking','Booking','https://admin.booking.com/'],['airbnb','Airbnb','https://www.airbnb.com/hosting'],['directo',null,null]]) {
+   rows.find(r=>r.id==='r2').canal_origen=channel;
+   await page.goto(base+'/reservas/r2');await page.waitForLoadState('networkidle');
+   const platformLink=page.getByRole('link',{name:/^Abrir (Booking|Airbnb)$/});
+   assert.equal(await platformLink.count(),label ? 1 : 0);
+   if(label) {
+    assert.equal(await platformLink.getAttribute('href'),href);
+    assert.equal(await platformLink.getAttribute('target'),'_blank');
+    assert.equal(await platformLink.getAttribute('rel'),'noopener noreferrer');
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+    await page.screenshot({path:`${output}/${width}-plataforma-${channel}.png`,fullPage:true});
+   }
+  }
+  rows.find(r=>r.id==='r2').canal_origen='booking';
   if(width===390){
    await page.goto(base+'/reservas/r1');
    const deleteDirect=page.getByRole('button',{name:'Eliminar reserva',exact:true});

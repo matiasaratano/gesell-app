@@ -19,7 +19,7 @@ function fmtFecha(str) {
 }
 function fmtHora() {
   const d = new Date()
-  return d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+  return `${d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })} hs`
 }
 function fmtDiaSemana() {
   const d = new Date()

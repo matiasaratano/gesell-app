@@ -11,12 +11,12 @@ export function tareasReservas(reservas, hoy = hoyLocal()) {
     const vigente = r.checkout >= hoy && r.estado !== 'finalizada'
     const booking = r.canal_origen === 'booking'
     const mensual = r.modalidad === 'mensual'
-    const contactoDesde = sumarDias(r.checkin, -45)
+    const contactoDesde = sumarDias(r.checkin, -30)
     const prepararDesde = booking ? contactoDesde : hoy
     const cobro = resumenCobros(r, r.pagos || [])
     if (vigente) {
       if (!r.cliente_id) agregar('cliente', 'Falta cliente', prepararDesde, `${ficha}?accion=editar`)
-      if (cobro.total === null) agregar('precio', 'Falta precio total', prepararDesde, `${ficha}?vista=pagos`)
+      if (cobro.total === null) agregar('precio', 'Falta precio total', hoy, `${ficha}?vista=pagos`)
       if (booking && !r.booking_contactado_el) agregar('contacto', 'Contactar al huésped de Booking', contactoDesde)
       if (!mensual && cobro.requiereSena && cobro.recibido === 0) agregar('sena', booking ? 'Sin pagos registrados · verificar condiciones de cobro en Booking' : 'Sin seña registrada', booking ? mesAnterior(r.checkin) : hoy, `${ficha}?vista=pagos`)
       if (!mensual && cobro.saldo > 0 && cobro.recibido > 0) agregar('saldo', `Saldo por cobrar: ${dinero(cobro.saldo)}`, r.checkin, `${ficha}?vista=pagos`, 1)

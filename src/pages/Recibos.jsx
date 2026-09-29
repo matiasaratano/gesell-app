@@ -5,6 +5,7 @@ import { useSearchParams } from 'react-router-dom';
 import SeleccionRecibo from '../components/SeleccionRecibo';
 import { datosReciboPago } from '../lib/recibo-pago.js';
 import ReciboPdf from '../components/ReciboPdf';
+import { enlaceMailRecibo } from '../lib/recibo-mail.js';
 
 // ─── Número en letras (portado del original) ──────────────────────────────────
 function numeroALetras(n) {
@@ -339,7 +340,7 @@ function PanelRecibo({ showToast, reserva = null, pago = null, verificar, verifi
     window.print();
   }
 
-  async function copiarTexto() {
+  async function enviarMail() {
     if (verificar && !await verificar()) return;
     const d = deptoData;
     const txt = [
@@ -363,7 +364,7 @@ function PanelRecibo({ showToast, reserva = null, pago = null, verificar, verifi
     ]
       .filter(Boolean)
       .join('\n');
-    navigator.clipboard.writeText(txt).then(() => showToast('Texto copiado')).catch(() => showToast('No se pudo copiar. Revisá el permiso del navegador.'));
+    window.location.href = enlaceMailRecibo(email, `Recibo de pago${nro ? ` N° ${nro}` : ''}`, txt);
   }
 
   return (
@@ -702,7 +703,7 @@ function PanelRecibo({ showToast, reserva = null, pago = null, verificar, verifi
         </div>
 
         {/* Acciones */}
-        <ReciboPdf key={JSON.stringify([nro, fecha, monto, concepto, desde, hasta, formaPago, comprobante, nombre, dni, direccion, localidad, tel, email, deptoData])} verificar={verificar} disabled={verificando} onImprimir={imprimir} onCopiar={copiarTexto} nombre={`recibo-${(nro || fecha).replace(/[^a-zA-Z0-9-]/g, '-')}.pdf`} />
+        <ReciboPdf key={JSON.stringify([nro, fecha, monto, concepto, desde, hasta, formaPago, comprobante, nombre, dni, direccion, localidad, tel, email, deptoData])} verificar={verificar} disabled={verificando} onImprimir={imprimir} onMail={enviarMail} nombre={`recibo-${(nro || fecha).replace(/[^a-zA-Z0-9-]/g, '-')}.pdf`} />
         {!vinculado && <div style={s.actionRow} className="action-row">
           {!vinculado && <button
             style={{

@@ -10,6 +10,10 @@ import { mesAnterior, sumarDias } from '../lib/mensualidades.js'
 import { useConfirmacion } from '../lib/confirmacion.js'
 
 const fecha = value => value?.slice(0, 10).split('-').reverse().join('/') || '—'
+const plataformas = {
+  booking: { nombre: 'Booking', url: 'https://admin.booking.com/' },
+  airbnb: { nombre: 'Airbnb', url: 'https://www.airbnb.com/hosting' },
+}
 const valorHistorial = (key, value) => {
   if (value == null || value === '') return '—'
   if (['checkin', 'checkout', 'recordar_el', 'limpieza_completada_para', 'fecha_recibido'].includes(key)) return fecha(value)
@@ -122,6 +126,7 @@ function FichaReserva() {
   const texto = borrador ?? mensajeReserva(reserva, pagos)
   const cerrada = reserva.estado === 'cerrada'
   const manual = ['directo', 'manual'].includes(reserva.canal_origen)
+  const plataforma = plataformas[reserva.canal_origen]
   const limpia = reserva.limpieza_completada_para === reserva.checkout
   return <main className="cobros cobros-page ficha-reserva">
     <header className="ficha-cabecera">
@@ -132,6 +137,7 @@ function FichaReserva() {
     <p>{reserva.estado} · {manual ? 'Manual' : reserva.canal_origen}</p>
     <div className="cobros-acciones ficha-acciones"><button className="cobros-primary" onClick={() => setEditor(reserva)}>Editar reserva</button>
       {!cerrada && <Link className="cobros-link" to={`/recibos?reserva_id=${reserva.id}`}>Recibos de pagos</Link>}
+      {plataforma && <a className="cobros-link" href={plataforma.url} target="_blank" rel="noopener noreferrer" title={`Abrir el panel de ${plataforma.nombre} en una pestaña nueva`}>Abrir {plataforma.nombre}</a>}
       {cerrada && <button className="cobros-primary" onClick={() => setEditor(reservaDesdeCierre(reserva))}>Asignar inquilino</button>}
       {cerrada && manual && <button onClick={() => setAbrir(true)}>Abrir cierre manual</button>}
       <button className="cobros-danger" disabled={guardando} onClick={eliminarReserva}>Eliminar reserva</button>
@@ -144,7 +150,7 @@ function FichaReserva() {
       <dl><dt>Cliente</dt><dd>{nombreCliente(reserva)}</dd><dt>Teléfono</dt><dd>{reserva.clientes?.whatsapp || 'Sin teléfono'}</dd><dt>Huéspedes</dt><dd>{reserva.adultos || 0} adultos · {reserva.menores || 0} menores</dd><dt>Tipo de alquiler</dt><dd>{reserva.modalidad === 'mensual' ? 'Largo / mensual' : 'Temporal'}</dd></dl>
       {reserva.notas_internas && <section><h3>Notas internas</h3><p className="ficha-notas">{reserva.notas_internas}</p></section>}
       {!cerrada && reserva.canal_origen === 'booking' && <section><h3>Seguimiento de Booking</h3>
-        <p>{reserva.booking_contactado_el ? `Contactado el ${fecha(reserva.booking_contactado_el)}` : `Contactar a partir del ${fecha(sumarDias(reserva.checkin, -45))}`}</p>
+        <p>{reserva.booking_contactado_el ? `Contactado el ${fecha(reserva.booking_contactado_el)}` : `Contactar a partir del ${fecha(sumarDias(reserva.checkin, -30))}`}</p>
         {reserva.modalidad !== 'mensual' && reserva.requiere_sena !== false && !pagos.some(p => p.confirmado && Number(p.monto) > 0) && <p>Verificar condiciones de cobro en Booking a partir del {fecha(mesAnterior(reserva.checkin))}</p>}
         <button disabled={guardando} onClick={() => actualizar({ booking_contactado_el: reserva.booking_contactado_el ? null : hoyLocal() })}>{reserva.booking_contactado_el ? 'Marcar contacto pendiente' : 'Marcar como contactado'}</button>
       </section>}
