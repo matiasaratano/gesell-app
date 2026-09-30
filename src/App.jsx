@@ -9,6 +9,9 @@ import Recibos from './pages/Recibos'
 import Admin from './pages/Admin'
 import Cobros from './pages/Cobros'
 import FichaReserva from './pages/FichaReserva'
+import Solicitudes from './pages/Solicitudes'
+import SolicitudPublica from './pages/SolicitudPublica'
+import AccesoAdministrativo from './components/AccesoAdministrativo'
 import './theme.css'
 import Confirmaciones from './components/Confirmaciones'
 
@@ -32,7 +35,7 @@ function Toast({ msg, onClose }) {
   )
 }
 
-function Nav() {
+function Nav({ salir, email }) {
   const { pathname } = useLocation()
   const links = [
     { to: '/', label: '🏠 Inicio' },
@@ -40,6 +43,7 @@ function Nav() {
     { to: '/cobros', label: '💰 Señas y cobros' },
     { to: '/nueva', label: '➕ Nueva reserva' },
     { to: '/mensajes', label: '💬 Mensajes' },
+    { to: '/solicitudes', label: '📋 Solicitudes' },
     { to: '/recibos', label: '📄 Recibos' },
     { to: '/admin', label: '⚙️ Admin' },
     { to: '/reporte', label: '📊 Reporte' },
@@ -50,7 +54,7 @@ function Nav() {
       borderBottom: '1px solid #e0dbd3', background: '#fff',
       position: 'sticky', top: 0, zIndex: 50, flexWrap: 'wrap',
     }}>
-      {links.map(l => (
+      <div className="app-nav-links">{links.map(l => (
         <Link
           key={l.to}
           to={l.to}
@@ -64,24 +68,33 @@ function Nav() {
         >
           {l.label}
         </Link>
-      ))}
+      ))}</div>
+      <button className="app-salir" title={email} onClick={salir}>Cerrar sesión</button>
     </nav>
   )
 }
 
 export default function App() {
+  return <BrowserRouter><Routes>
+    <Route path="/solicitar/:token" element={<SolicitudPublica />} />
+    <Route path="/consulta/:token" element={<SolicitudPublica general />} />
+    <Route path="/*" element={<AccesoAdministrativo>{sesion => <Administracion {...sesion} />}</AccesoAdministrativo>} />
+  </Routes></BrowserRouter>
+}
+
+function Administracion({ salir, email }) {
   const [toastMsg, setToastMsg] = useState('')
 
   return (
-    <BrowserRouter>
       <Confirmaciones>
-      <Nav />
+      <Nav salir={salir} email={email} />
       <div className="app-content">
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/calendario" element={<Calendario />} />
         <Route path="/nueva" element={<NuevaReserva onExito={() => setToastMsg('Reserva creada correctamente')} />} />
         <Route path="/mensajes" element={<GeneradorMensajes />} />
+        <Route path="/solicitudes" element={<Solicitudes />} />
         <Route path="/recibos" element={<Recibos />} />
         <Route path="/admin" element={<Admin />} />
         <Route path="/cobros" element={<Cobros />} />
@@ -91,6 +104,5 @@ export default function App() {
       </div>
       <Toast msg={toastMsg} onClose={() => setToastMsg('')} />
       </Confirmaciones>
-    </BrowserRouter>
   )
 }

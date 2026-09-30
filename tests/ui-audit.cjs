@@ -2,6 +2,7 @@
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || '/Users/macbook/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const {mockAuth,login}=require('./auth-mock.cjs');
 const base = process.env.AUDIT_URL || 'http://127.0.0.1:5174';
 const output = process.env.AUDIT_OUTPUT || '/tmp/gesell-audit';
 fs.mkdirSync(output, {recursive:true});
@@ -36,6 +37,7 @@ function match(row,u) {
   const errors=[],dialogs=[],writes=[];
   page.on('pageerror',e=>errors.push(e.message));page.on('dialog',async d=>{dialogs.push(d.message());await d.dismiss();});
   await context.route('**/*',async route=>{
+   if(await mockAuth(route))return;
    const req=route.request(),u=new URL(req.url());
    if(u.pathname.startsWith('/rest/v1/')) {
     const table=u.pathname.split('/').pop(),body=req.postDataJSON();
@@ -58,6 +60,7 @@ function match(row,u) {
    if(u.origin===new URL(base).origin)return route.continue();
    return route.abort();
   });
+  await login(page,base);
   const routes=['/','/calendario','/nueva','/cobros','/reservas/r1?vista=pagos','/mensajes','/recibos','/admin?seccion=propiedades','/admin?seccion=reservas','/admin?seccion=clientes','/reporte'];
   for(const route of routes) {
    const start=errors.length;await page.goto(base+route);await page.waitForLoadState('networkidle');
@@ -213,7 +216,9 @@ function match(row,u) {
    assert.equal(await page.getByRole('button',{name:'Cliente guardado',exact:true}).isDisabled(),true);
    await page.getByPlaceholder('287000',{exact:true}).fill('3000.50');await page.getByText('TRES MIL CON 50/100 PESOS ARGENTINOS',{exact:true}).first().waitFor();
    await page.evaluate(()=>Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{window.copied=text;}}}));
+   await page.getByRole('button',{name:'Abrir en Gmail',exact:true}).click();
    await page.getByRole('button',{name:/Copiar texto/}).click();assert.match(await page.evaluate(()=>window.copied),/Dirección: Calle de prueba 123/);
+   await page.getByRole('dialog',{name:'Enviar recibo por mail'}).getByRole('button',{name:'Cerrar',exact:true}).click();
    await page.evaluate(()=>document.body.classList.add('printing-recibo'));await page.emulateMedia({media:'print'});
    assert.equal(await page.locator('nav').isVisible(),false);assert.equal(await page.locator('#recibo-preview').isVisible(),true);
    await page.screenshot({path:`${output}/390-recibo-print.png`,fullPage:true});await page.emulateMedia({media:'screen'});

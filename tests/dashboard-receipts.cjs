@@ -2,6 +2,7 @@
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || '/Users/macbook/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const {mockAuth,login}=require('./auth-mock.cjs');
 const base = process.env.AUDIT_URL || 'http://127.0.0.1:5174';
 const output = process.env.AUDIT_OUTPUT || '/tmp/gesell-dashboard-receipts';
 fs.mkdirSync(output, { recursive: true });
@@ -51,6 +52,7 @@ function matches(row, url) {
         page.on('pageerror', e => errors.push(e.message));
         page.on('dialog', d => { errors.push(`Unexpected native dialog: ${d.message()}`); d.dismiss(); });
         await context.route('**/*', async route => {
+          if(await mockAuth(route))return;
           const request = route.request(), url = new URL(request.url());
           if (url.pathname.startsWith('/rest/v1/')) {
             const table = url.pathname.split('/').pop();
@@ -85,7 +87,7 @@ function matches(row, url) {
           if (url.origin === new URL(base).origin) return route.continue();
           return route.abort();
         });
-        await page.goto(base + '/');
+        await login(page,base);
         await page.getByRole('button', { name: 'Pospuestas · 0', exact: true }).waitFor();
         assert.equal(await page.getByRole('region', { name: 'Estado de departamentos' }).count(), 0);
         assert.equal(await page.getByRole('checkbox', { name: /Incluir pospuestas/ }).count(), 0);

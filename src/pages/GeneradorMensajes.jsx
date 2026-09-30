@@ -61,17 +61,18 @@ function genFicha(p) {
   const label     = acomp === 1 ? 'Acompañante' : 'Acompañantes'
   const lines     = Array.from({ length: acomp }, (_, i) => `  ${i + 1}.\n`).join('')
   const vehiculo  = p.restriccion_vehiculos ? '  • Vehículos: No está permitido ingresar vehículos (motos, cuatriciclos, etc.) al predio.\n' : ''
-  const intro     = p.intro_personalizado ?? 'Gracias por reservar en Departamentos Norte. A continuación te envío los datos para continuar:'
+  const intro     = p.intro_personalizado ?? 'Gracias por tu interés en Departamentos Norte. A continuación te envío los datos para continuar con tu solicitud:'
   const esPN      = !p.marca
   const firmaWeb  = esDP(esPN)
   // const webSec   = p.link_web ? 'Ver fotos: ' + p.link_web + '\n' : ''
 
-  return `Asunto: Confirmación de Reserva – ${p.nombre}\n\n${intro}\n\n`
+  return `Asunto: Solicitud de reserva (sin confirmar) – ${p.nombre}\n\n${intro}\n\n`
     + SEP + 'POLÍTICAS DE PAGO\n' + SEP
     + '  • Método de pago: Transferencia bancaria.\n'
-    + '  • Reserva: Depósito del 30% dentro de las 48 hs de recibir los datos bancarios. Pasado ese plazo, la reserva puede ser cancelada.\n'
+    + '  • Seña: 30% del total. Consultanos la disponibilidad antes de transferir.\n'
     + '  • Saldo restante: 70% en efectivo al momento del check-in.\n'
-    + '  • Confirmación: Una vez recibido el formulario, te enviamos los datos bancarios.\n\n'
+    + '  • Una vez recibido el formulario, revisamos disponibilidad y te enviamos el detalle para pagar. Completarlo no bloquea fechas.\n'
+    + '  • La reserva se confirma cuando verificamos el pago y la disponibilidad.\n\n'
     + SEP + 'FORMULARIO DE INSCRIPCIÓN\n' + SEP
     + 'Por favor, completá los datos y envíalos por WhatsApp al +54 9 2255-536640:\n\n'
     + 'Datos del titular:\n'
@@ -98,8 +99,8 @@ function genDetalle(p, { detCheckin, detCheckout, detTotal }) {
   const veh    = p.restriccion_vehiculos ? '  • No está permitido ingresar vehículos al predio (motos, cuatriciclos, etc.).\n' : ''
   const alias  = p.alias_cbu || 'maratano.mp'
 
-  return `Detalle de su reserva – ${marca}\n\n`
-    + `Gracias por reservar en ${marca}. Leé atentamente la información de tu reserva:\n\n`
+  return `Detalle de tu solicitud (sin confirmar) – ${marca}\n\n`
+    + `Gracias por tu interés en ${marca}. Leé atentamente la información antes de transferir:\n\n`
     + SEP + 'DETALLES DE LA RESERVA\n' + SEP
     + `  • Departamento: ${p.nombre}\n`
     + `  • Check-in: ${fmtFecha(detCheckin)} a partir de las 14:00 hs.\n`
@@ -107,14 +108,14 @@ function genDetalle(p, { detCheckin, detCheckout, detTotal }) {
     + `  • Duración: ${n} noches\n`
     + `  • Costo total: ${fmt(tot)}\n`
     + `  • Seña para confirmar (30%): ${fmt(sena)}\n`
-    + `    ↳ Este depósito debe realizarse dentro de las 48 hs de recibir los datos bancarios. Pasado ese plazo, la reserva puede cancelarse.\n`
+    + `    ↳ Esta solicitud no bloquea fechas. Consultanos la disponibilidad antes de transferir.\n`
     + `  • Saldo a pagar al ingresar: ${fmt(saldo)}\n\n`
     + SEP + 'POLÍTICAS Y CONDICIONES\n' + SEP
     + '  • No incluye ropa blanca (sábanas ni toallas).\n'
     + '  • Solo para familias (no se permiten grupos de jóvenes).\n'
     + '  • No está permitido realizar fiestas ni eventos.\n'
     + veh
-    + '  • La reserva se confirma únicamente tras recibir el depósito del 30%.\n\n'
+    + '  • La reserva se confirma cuando verificamos el depósito del 30% y la disponibilidad.\n\n'
     + SEP + 'MÉTODO DE PAGO\n' + SEP
     + 'Transferencia bancaria o Mercado Pago.\n'
     + 'Cuenta a nombre de Matías Nicolás Aratano:\n'

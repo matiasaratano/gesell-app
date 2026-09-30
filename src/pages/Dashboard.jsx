@@ -4,6 +4,7 @@ import { supabase, supabaseAutomatico } from '../lib/supabase'
 import PagoRapido from '../components/PagoRapido'
 import { ingresosManana, vistaDepartamento } from '../lib/panel-departamentos.js'
 import PendientesLimpieza from '../components/PendientesLimpieza'
+import SolicitudesPendientes from '../components/SolicitudesPendientes'
 import { tareasReservas } from '../lib/tareas-reserva.js'
 
 // ─── Utilidades de fecha ──────────────────────────────────────────────────────
@@ -240,7 +241,7 @@ export default function Dashboard() {
             />
             <MetricaCard
               valor={solicitudes.length}
-              label="Pendientes"
+              label="Reservas pendientes"
               color="#6B21A8"
               bg="#F3E8FF"
               icono="📋"
@@ -258,6 +259,8 @@ export default function Dashboard() {
             )}
           </Seccion>
 
+          <SolicitudesPendientes propiedadId={propiedadId} Contenedor={Seccion} />
+
           {/* ── Grilla de 2 columnas de reservas ── */}
           <div style={{ ...s.grid2, ...(isMobile ? s.grid2Mobile : {}) }}>
             {/* Columna Izquierda: Alojadas ahora + Solicitudes pendientes */}
@@ -272,7 +275,7 @@ export default function Dashboard() {
                 )}
               </Seccion>
 
-              <Seccion titulo="Solicitudes pendientes" badge={solicitudes.length} accion={{ label: 'Admin', to: '/admin?seccion=reservas' }}>
+              <Seccion titulo="Reservas pendientes" badge={solicitudes.length} accion={{ label: 'Admin', to: '/admin?seccion=reservas' }}>
                 {solicitudes.length === 0 ? (
                   <Vacio texto="No hay reservas pendientes de confirmar" />
                 ) : (

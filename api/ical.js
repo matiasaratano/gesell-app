@@ -1,4 +1,6 @@
 import { isAllowedIcalUrl, fetchIcalUpstream } from './lib/ical-upstream.js'
+import { requireAdmin } from './lib/admin-auth.js'
+import process from 'node:process'
 
 /**
  * Vercel Serverless: GET /api/ical?url=https://...
@@ -9,6 +11,9 @@ export default async function handler(req, res) {
     res.setHeader('Allow', 'GET, HEAD')
     return res.status(405).json({ error: 'Method not allowed' })
   }
+
+  const denied = await requireAdmin(req.headers, process.env)
+  if (denied) return res.status(denied).json({ error: 'Se requiere acceso administrativo.' })
 
   const raw = req.query?.url
   const url = typeof raw === 'string' ? raw : Array.isArray(raw) ? raw[0] : ''

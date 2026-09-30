@@ -9,7 +9,8 @@ function newIcalFeedRow() {
 }
 
 async function fetchIcsText(url) {
-  const res = await fetch(`/api/ical?url=${encodeURIComponent(url)}`, { cache: 'no-store' })
+  const { data } = await supabase.auth.getSession()
+  const res = await fetch(`/api/ical?url=${encodeURIComponent(url)}`, { cache: 'no-store', headers: { Authorization: `Bearer ${data.session?.access_token || ''}` } })
   if (!res.ok) throw new Error('Error descargando iCal')
   return res.text()
 }

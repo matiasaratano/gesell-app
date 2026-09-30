@@ -1,0 +1,38 @@
+.solicitudes-cabecera { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.solicitudes-cabecera h1 { margin: 0; }
+.solicitudes .cobros-lista > li { flex-wrap: wrap; padding: 12px 0; }
+.solicitudes .cobros-lista .cobros-acciones { margin: 0; }
+.solicitudes-dialog { margin: auto; width: 660px; max-width: calc(100vw - 24px); max-height: 88dvh; overflow-y: auto; border: 1px solid #ddd; border-radius: 8px; padding: 20px; box-sizing: border-box; }
+.solicitudes-dialog::backdrop { background: #0006; }
+.solicitudes-dialog h2 { font-size: 20px; margin: 0 0 16px; }
+.solicitudes-dialog textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 12px; border: 1px solid #ddd; border-radius: 6px; resize: vertical; }
+.solicitudes-dialog .pago-fields { margin: 14px 0; }
+.solicitudes-acceso { max-width: 400px; display: grid; gap: 14px; }
+.acceso-pagina { min-height: 100dvh; display: grid; place-items: center; padding: 24px; box-sizing: border-box; }
+.acceso-panel { width: 100%; max-width: 400px; padding: 28px; box-sizing: border-box; background: white; border: 1px solid #ddd; border-radius: 8px; }
+.acceso-panel h1 { margin: 0 0 24px; font-size: 26px; }
+.solicitudes-busqueda { max-width: 420px; margin: 20px 0 16px; }
+.solicitudes .solicitudes-cabecera .cobros-acciones { margin: 0; }
+.solicitudes .cobros-tabs { margin-top: 20px; }
+@media(max-width: 500px) { .solicitudes .cobros-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.app-nav-links { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
+.app-nav .app-salir { align-self: flex-start; margin-left: auto; flex-shrink: 0; min-height: 44px; padding: 6px 12px; border: 1px solid #ddd; border-radius: 8px; background: white; color: #49564f; font: inherit; font-size: 13px; cursor: pointer; }
+@media(max-width: 500px) { .app-nav-links { flex-basis: 100%; order: 2; } .app-nav .app-salir { order: 1; } .acceso-panel { padding: 24px; } }
+.solicitudes-inicio { margin-bottom: 20px; }
+.solicitudes-inicio .cobros { padding: 0 12px; }
+.solicitudes-inicio-lista { list-style: none; margin: 0; padding: 0; }
+.solicitudes-inicio-lista li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid #e5e7eb; }
+.solicitudes-inicio-lista li:last-child { border-bottom: 0; }
+.solicitudes-inicio-datos { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; font-size: 14px; overflow-wrap: anywhere; }
+.solicitudes-inicio-datos span { color: #5b6660; }
+.solicitudes-inicio-lista .cobros-link { flex-shrink: 0; }
+.acceso-sesion { display: flex; justify-content: flex-end; align-items: center; gap: 12px; flex-wrap: wrap; padding: 16px 24px; }
+.acceso-sesion span { overflow-wrap: anywhere; }
+@media print { .acceso-sesion { display: none !important; } }
+.solicitud-publica { max-width: 700px; margin: auto; }
+.solicitud-publica h2 { font-size: 20px; }
+.solicitud-publica .pago-fields { margin: 20px 0; }
+.solicitud-publica input { min-width: 0; width: 100%; box-sizing: border-box; }
+.solicitud-publica .cobros-check input { width: auto; }
+@media(max-width: 500px) { .solicitud-publica .pago-fields { grid-template-columns: minmax(0,1fr); } }
+@media(max-width: 500px) { .solicitudes-dialog .pago-fields { grid-template-columns: minmax(0,1fr); } .solicitudes .cobros-lista .cobros-acciones { display: grid; width: 100%; grid-template-columns: repeat(2,minmax(0,1fr)); } }
