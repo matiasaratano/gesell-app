@@ -1,5 +1,17 @@
 # Acceso administrativo y solicitudes
 
+## Reservas directas sobre cierres importados
+
+Ejecutar completo `supabase/migrations/20261001_solicitudes_sobre_cierres.sql`.
+Solo agrega una funcion administrativa; no cambia fechas al instalarla.
+El formulario publico admite consultas aunque haya fechas ocupadas.
+Al preparar la sena se revisa disponibilidad: un cierre importado sin cliente,
+precio ni pagos permite continuar con autorizacion explicita. Una reserva real
+o cierre manual sigue bloqueando el flujo. Al confirmar el pago se vuelve a
+comprobar todo y se solicita autorizar los cierres actuales. Se conservan las
+noches fuera de la estadia. Cierre, reserva y pago se modifican en una sola
+transaccion: si falla algo, no se cambia nada. Booking/Airbnb no se modifican.
+
 ## Si el formulario y la confirmacion ya funcionan
 
 Ejecutar solamente `supabase/migrations/20260930_solicitudes_reservas_eliminadas.sql`.

@@ -38,6 +38,15 @@ function database(initial, failRead = false) {
 }
 const cierre = {id:'closure',propiedad_id:'p1',canal_origen:'booking',estado:'cerrada',cliente_id:null,precio_total:null,pagos:[],checkin:'2090-01-01',checkout:'2090-01-10'}
 const ics = body => `BEGIN:VCALENDAR\r\nVERSION:2.0\r\n${body}END:VCALENDAR\r\n`
+test('reserva directa sobre cierre sigue intacta al reimportar todo el cierre de Booking y Airbnb', async () => {
+  for (const canal of ['booking','airbnb']) {
+    const directa={...cierre,id:'directa',canal_origen:'directo',estado:'confirmada',cliente_id:'c1',precio_total:1000,pagos:[{monto:300}],checkin:'2090-01-04',checkout:'2090-01-06'}
+    const db=database([{...cierre,canal_origen:canal,checkout:'2090-01-04'},directa,{...cierre,id:'derecha',canal_origen:canal,checkin:'2090-01-06'}])
+    for(let i=0;i<2;i++) await upsertIcalReservas(db,[{start:cierre.checkin,end:cierre.checkout,summary:'CLOSED'}],'p1',canal)
+    assert.deepEqual(db.rows.find(r=>r.id==='directa'),directa)
+    assert.equal(db.rows.filter(r=>r.estado==='cerrada' && r.checkin<directa.checkout && r.checkout>directa.checkin).length,0)
+  }
+})
 
 test('empty complete calendar accepted; HTML, truncated and invalid events rejected', () => {
   assert.deepEqual(parseIcs(ics('')),[])

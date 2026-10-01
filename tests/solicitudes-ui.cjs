@@ -9,7 +9,8 @@ const output='/tmp/gesell-solicitudes';fs.mkdirSync(output,{recursive:true});
  try {for(const width of [1440,390,320]){
   const ctx=await browser.newContext({viewport:{width,height:900},locale:'es-AR'});
   try {
-   const page=await ctx.newPage(), rows=[], errors=[];let converted=0,firstSubmission=true,occupied=false,finished=false;
+   const page=await ctx.newPage(), rows=[], errors=[];let converted=0,firstSubmission=true,occupied=false,finished=false,imported=false;
+   const importedClosure={id:'closure-test',checkin:'2090-01-01',checkout:'2090-02-01',estado:'cerrada',canal_origen:'booking',cliente_id:null,precio_total:null,pagos:[]};
    page.on('pageerror',e=>errors.push(e.message));
    const intercept=async route=>{
     if(await mockAuth(route))return;
@@ -23,14 +24,20 @@ const output='/tmp/gesell-solicitudes';fs.mkdirSync(output,{recursive:true});
       if(firstSubmission){firstSubmission=false;return route.fulfill({status:503,json:{message:'Respuesta perdida (prueba)'}});}
       return route.fulfill({json:true});
      }
+     if(table==='confirmar_solicitud_sobre_cierres'){
+      assert.deepEqual(body.p_cierres,[{id:importedClosure.id,checkin:importedClosure.checkin,checkout:importedClosure.checkout,canal_origen:'booking'}]);
+      imported=false;
+      converted++;rows[0].estado='confirmada';rows[0].reserva_id='reservation-test';return route.fulfill({json:'reservation-test'});
+     }
      if(table==='confirmar_solicitud'){
       converted++;rows[0].estado='confirmada';rows[0].reserva_id='reservation-test';return route.fulfill({json:'reservation-test'});
      }
      if(table==='propiedades')return route.fulfill({json:[{id:'p1',nombre:'Depto 1',activa:true,alias_cbu:'cuenta.prueba'}]});
      if(table==='clientes')return route.fulfill({json:[]});
      if(table==='reservas' && url.searchParams.get('select')==='id,checkout')return route.fulfill({json:[{id:'reservation-test',checkout:finished?'2020-01-15':'2090-01-15'}]});
-     if(table==='reservas'){assert.ok(['GET','PATCH'].includes(req.method()));return route.fulfill({json:req.headers().accept?.includes('vnd.pgrst.object')?{...rows[0],clientes:rows[0].datos_cliente,propiedades:{nombre:'Depto 1'},pagos:[{confirmado:true,monto:30000}],estado:'confirmada'}:occupied?[{id:'ocupada'}]:[]});}
+     if(table==='reservas'){assert.ok(['GET','PATCH'].includes(req.method()));return route.fulfill({json:req.headers().accept?.includes('vnd.pgrst.object')?{...rows[0],clientes:rows[0].datos_cliente,propiedades:{nombre:'Depto 1'},pagos:[{confirmado:true,monto:30000}],estado:'confirmada'}:occupied?[{id:'ocupada'}]:imported?[importedClosure]:[]});}
      if(table==='solicitudes'){
+      if(url.searchParams.get('select')==='estado,reserva_id')return route.fulfill({json:{estado:rows[0].estado,reserva_id:rows[0].reserva_id}});
       if(req.method()==='POST'){rows.push({...body,estado:'abierta',updated_at:'2026-09-30T10:00:00Z'});return route.fulfill({json:{id:body.id}});}
       if(req.method()==='PATCH'){Object.assign(rows[0],body,{updated_at:'2026-09-30T12:00:00Z'});return route.fulfill({json:{id:rows[0].id}});}
       return route.fulfill({json:rows});
@@ -98,9 +105,13 @@ const output='/tmp/gesell-solicitudes';fs.mkdirSync(output,{recursive:true});
    assert.equal(await conflict.evaluate(el=>el.scrollWidth>el.clientWidth),false);
    await page.screenshot({path:`${output}/${width}-conflicto.png`,fullPage:true});
    await conflict.getByRole('button',{name:'Revisar solicitud',exact:true}).click();
-   occupied=false;
+   occupied=false;imported=true;
    await form.getByRole('button',{name:'Guardar y preparar seña',exact:true}).click();await form.waitFor({state:'hidden'});
    assert.equal(converted,0);
+   const closureWarning=page.getByRole('dialog',{name:'Fechas cerradas en la plataforma',exact:true});
+   await closureWarning.waitFor();
+   await page.screenshot({path:`${output}/${width}-cierre-importado.png`,fullPage:true});
+   await closureWarning.getByRole('button',{name:'Preparar seña sobre estos cierres',exact:true}).click();
    const message=page.getByRole('dialog',{name:'Mensaje para el huésped'});await message.waitFor();
    assert.match(await message.getByLabel('Texto del mensaje').inputValue(),/no bloquea fechas/);
    await message.getByRole('button',{name:'Cerrar',exact:true}).click();
@@ -108,6 +119,12 @@ const output='/tmp/gesell-solicitudes';fs.mkdirSync(output,{recursive:true});
    const pay=page.getByRole('dialog',{name:'Confirmar pago recibido',exact:true});
    await pay.getByRole('checkbox').check();
    await page.screenshot({path:`${output}/${width}-pago.png`,fullPage:true});
+   await pay.getByRole('button',{name:'Confirmar pago y reserva'}).click();
+   await pay.getByLabel('Son cierres preventivos: autorizo reservar sobre estos cierres.',{exact:true}).waitFor();
+   assert.equal(converted,0);
+   await pay.getByLabel('Son cierres preventivos: autorizo reservar sobre estos cierres.',{exact:true}).check();
+   await page.screenshot({path:`${output}/${width}-autorizar-cierre.png`,fullPage:true});
+   assert.equal(await pay.evaluate(el=>el.scrollWidth>el.clientWidth),false);
    await pay.getByRole('button',{name:'Confirmar pago y reserva'}).click();await pay.waitFor({state:'hidden'});
    await page.getByRole('link',{name:'Ver reserva',exact:true}).waitFor();assert.equal(converted,1);
    await page.getByRole('button',{name:'Voucher de confirmación',exact:true}).click();

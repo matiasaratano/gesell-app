@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { dinero, parseImporte } from '../lib/cobros.js'
 import { hoyLocal, datosPago, pagoVacio } from '../lib/operacion-reserva.js'
 import { detalleSolicitud, voucherSolicitud, fechaSolicitud, solicitudLista, vistaSolicitud } from '../lib/solicitudes.js'
+import { revisarDisponibilidadSolicitud } from '../lib/disponibilidad-solicitud.js'
 import '../components/cobros.css'
 import './solicitudes.css'
 
@@ -25,6 +26,7 @@ export default function Solicitudes() {
   const [cobrar, setCobrar] = useState(null), [texto, setTexto] = useState(null), [busy, setBusy] = useState(false)
   const [enlace, setEnlace] = useState(null)
   const [bloqueo, setBloqueo] = useState(null)
+  const [cierresSeña, setCierresSeña] = useState(null)
   const [params, setParams] = useSearchParams()
   const solicitudId = params.get('solicitud')
   const lock = useRef(false)
@@ -85,14 +87,10 @@ export default function Solicitudes() {
   }
   async function prepararDetalle(s) {
       if (!solicitudLista(s)) throw new Error('Asigná un departamento y un precio antes de preparar la seña.')
-      const { data, error: err } = await supabase.from('reservas').select('id').eq('propiedad_id',s.propiedad_id).neq('estado','cancelada').lt('checkin',s.checkout).gt('checkout',s.checkin).limit(1)
-      if (err) throw new Error('No se pudo comprobar la disponibilidad.')
-      if (data.length) throw Object.assign(new Error('El departamento tiene una reserva o un cierre en esas fechas. La solicitud sigue guardada, pero no se puede preparar el pedido de seña. Elegí otro departamento o cambiá las fechas.'), { code: 'FECHAS_OCUPADAS', solicitudId: s.id })
-      const bloqueos = await supabase.from('bloqueos').select('id').eq('propiedad_id',s.propiedad_id).lt('fecha_inicio',s.checkout).gt('fecha_fin',s.checkin).limit(1)
-      if (bloqueos.error) throw new Error('No se pudieron comprobar los cierres manuales.')
-      if (bloqueos.data.length) throw Object.assign(new Error('El departamento tiene un cierre manual en esas fechas. La solicitud sigue guardada, pero no se puede preparar el pedido de seña. Elegí otro departamento o cambiá las fechas.'), { code: 'FECHAS_OCUPADAS', solicitudId: s.id })
+      const cierres = await revisarDisponibilidadSolicitud(supabase, s)
       const propiedad = props.find(p => p.id === s.propiedad_id)
       if (!propiedad?.alias_cbu) throw new Error('Completá el alias de cobro del alojamiento en Admin antes de preparar el detalle.')
+      if (cierres.length) { setCierresSeña({ s, cierres, texto: detalleSolicitud(s, propiedad), propiedad }); return null }
       return detalleSolicitud(s, propiedad)
   }
   async function compartirFormulario() {
@@ -124,6 +122,7 @@ export default function Solicitudes() {
       </>}</div></li>)}</ul>}
     {!loading && !visibles.length && <p>No hay solicitudes en esta vista.</p>}
     {bloqueo && <Dialog titulo="No se puede solicitar la seña" cerrar={()=>setBloqueo(null)}><p role="alert">{bloqueo.mensaje}</p><div className="cobros-acciones"><button className="cobros-primary" onClick={()=>{const s=rows.find(s=>s.id===bloqueo.id);if(s)setEditor(structuredClone(s));setBloqueo(null)}}>Revisar solicitud</button><button onClick={()=>setBloqueo(null)}>Cerrar</button></div></Dialog>}
+    {cierresSeña && <Dialog titulo="Fechas cerradas en la plataforma" cerrar={()=>setCierresSeña(null)}><p><strong>{cierresSeña.propiedad.nombre}</strong> · {fechaSolicitud(cierresSeña.s.checkin)} → {fechaSolicitud(cierresSeña.s.checkout)}</p><DetalleCierres cierres={cierresSeña.cierres} /><p>Podés preparar una reserva directa si estos cierres son preventivos. Las fechas no cambian hasta que confirmes el pago. Booking y Airbnb seguirán bajo tu gestión manual.</p><div className="cobros-acciones"><button className="cobros-primary" onClick={()=>{setTexto(cierresSeña.texto);setCierresSeña(null)}}>Preparar seña sobre estos cierres</button><button onClick={()=>setCierresSeña(null)}>Cancelar</button></div></Dialog>}
     {editor && <Dialog titulo={editor.updated_at ? 'Datos de la solicitud' : 'Nueva solicitud'} cerrar={()=>!busy && setEditor(null)}>
       <form onSubmit={guardar}><div className="pago-fields">
         <label>Departamento<select aria-label="Departamento" required value={editor.propiedad_id || ''} onChange={e=>setEditor({...editor,propiedad_id:e.target.value})}><option value="">Elegir</option>{props.filter(p=>p.activa!==false || p.id===editor.propiedad_id).map(p=><option key={p.id} value={p.id}>{p.nombre}</option>)}</select></label>
@@ -147,12 +146,21 @@ function Dialog({ titulo, cerrar, children }) {
 function Confirmar({s,cerrar,onSaved}) {
   const [pago,setPago]=useState(()=>({...pagoVacio(),monto:String(Math.round(Number(s.precio_total)*30)/100)}))
   const [error,setError]=useState(''),[busy,setBusy]=useState(false)
+  const [cierres,setCierres]=useState(null),[autoriza,setAutoriza]=useState(false)
   const id=useRef(crypto.randomUUID()),lock=useRef(false)
   async function guardar(e) {
     e.preventDefault();if(lock.current)return;lock.current=true;setBusy(true);setError('')
     try {
       const payload=datosPago(pago,id.current)
-      const {data,error:err}=await supabase.rpc('confirmar_solicitud',{p_id:s.id,p_version:s.updated_at,p_pago:payload})
+      const vigente=await supabase.from('solicitudes').select('estado,reserva_id').eq('id',s.id).single()
+      if (vigente.error) throw new Error('No se pudo verificar la solicitud. Reintentá antes de registrar el pago.')
+      if (vigente.data?.estado==='confirmada' && vigente.data.reserva_id) { await onSaved(vigente.data.reserva_id);return }
+      const actuales=await revisarDisponibilidadSolicitud(supabase,s)
+      if (actuales.length && (!autoriza || JSON.stringify(actuales)!==JSON.stringify(cierres))) {
+        setCierres(actuales);setAutoriza(false);return
+      }
+      const {data,error:err}=await supabase.rpc(actuales.length?'confirmar_solicitud_sobre_cierres':'confirmar_solicitud',{p_id:s.id,p_version:s.updated_at,p_pago:payload,...(actuales.length?{p_cierres:actuales}:{})})
+      if (err?.code==='PGRST202') throw new Error('Falta ejecutar la actualización SQL para confirmar sobre cierres importados.')
       if(err || !data) throw err || new Error('No se recibió confirmación. Podés reintentar sin duplicar el pago.')
       await onSaved(data)
     } catch(e){setError(/ocupadas|cierre manual/i.test(e.message || '') ? 'No se confirmó la reserva ni se registró el pago: las fechas están ocupadas. Cerrá esta ventana y revisá el departamento y las fechas de la solicitud.' : e.message)} finally {lock.current=false;setBusy(false)}
@@ -162,5 +170,8 @@ function Confirmar({s,cerrar,onSaved}) {
     <label>Importe recibido<input required inputMode="decimal" value={pago.monto} onChange={e=>setPago({...pago,monto:e.target.value})} /></label>
     <label>Fecha del cobro<input required type="date" max={hoyLocal()} value={pago.fecha_recibido} onChange={e=>setPago({...pago,fecha_recibido:e.target.value})} /></label>
     <label>Medio de pago<select value={pago.metodo} onChange={e=>setPago({...pago,metodo:e.target.value})}><option value="transferencia">Transferencia</option><option value="efectivo">Efectivo</option><option value="otro">Otro</option></select></label>
-  </div><label className="cobros-check"><input type="checkbox" required />Verifiqué que recibí este pago.</label>{error&&<p role="alert" className="cobros-error">{error}</p>}<div className="cobros-acciones"><button className="cobros-primary" disabled={busy}>Confirmar pago y reserva</button><button type="button" disabled={busy} onClick={cerrar}>Cancelar</button></div></form></Dialog>
+  </div><label className="cobros-check"><input type="checkbox" required />Verifiqué que recibí este pago.</label>{cierres && <div className="cobros-aviso"><p>Reserva directa: {fechaSolicitud(s.checkin)} → {fechaSolicitud(s.checkout)}</p><DetalleCierres cierres={cierres} /><label className="cobros-check"><input type="checkbox" checked={autoriza} onChange={e=>setAutoriza(e.target.checked)} />Son cierres preventivos: autorizo reservar sobre estos cierres.</label><p>Las noches restantes seguirán cerradas. No se modifica Booking ni Airbnb.</p></div>}{error&&<p role="alert" className="cobros-error">{error}</p>}<div className="cobros-acciones"><button className="cobros-primary" disabled={busy}>Confirmar pago y reserva</button><button type="button" disabled={busy} onClick={cerrar}>Cancelar</button></div></form></Dialog>
+}
+function DetalleCierres({cierres}) {
+  return <ul>{cierres.map(r=><li key={r.id}>{r.canal_origen==='booking'?'Booking':'Airbnb'} · {fechaSolicitud(r.checkin)} → {fechaSolicitud(r.checkout)}</li>)}</ul>
 }

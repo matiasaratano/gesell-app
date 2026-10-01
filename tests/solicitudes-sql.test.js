@@ -46,6 +46,70 @@ async function enlace(db,s) {
  return (await db.query('select crear_enlace_solicitud($1) as token',[s.id])).rows[0].token
 }
 const datos={nombre:'Ana',apellido:'Prueba',dni:'12345678',whatsapp:'1123456789',email:'ana@example.com',domicilio:'Calle 1',ciudad:'Villa Gesell'}
+test('confirmar sobre cierres conserva extremos, exige consentimiento y revierte todo ante error',async()=>{
+ const {db,s}=await base();try{
+  await acceso(db)
+  await db.exec(sql('../supabase/migrations/20261001_solicitudes_sobre_cierres.sql'))
+  await db.exec(sql('../supabase/migrations/20261001_solicitudes_sobre_cierres.sql'))
+  const c=(await db.query(`insert into reservas(id,propiedad_id,canal_origen,estado,checkin,checkout) values(gen_random_uuid(),$1,'booking','cerrada','2026-12-20','2027-02-01') returning id,checkin::text,checkout::text,canal_origen`,[prop])).rows[0]
+  const run=(cs=[c],p=pago)=>db.query('select confirmar_solicitud_sobre_cierres($1,$2,$3,$4) as id',[s.id,s.updated_at,JSON.stringify(p),JSON.stringify(cs)])
+  await db.exec('set role anon')
+  await assert.rejects(run(),/permission denied/)
+  await db.exec('set role authenticated')
+  await assert.rejects(confirmar(db,s),/ocupadas/)
+  await assert.rejects(run([]),/autoriza/)
+  await assert.rejects(run([{...c,checkout:'2027-01-30'}]),/cambiaron/)
+  await assert.rejects(run([c],{...pago,monto:2000}),/pago/)
+  assert.deepEqual((await db.query('select id,checkin::text,checkout::text,canal_origen from reservas')).rows,[c])
+  assert.equal((await db.query('select * from clientes')).rows.length,0)
+  await db.exec('reset role;create function falla_pago_cierre() returns trigger language plpgsql as $$begin raise exception \'pago fallido\';end$$;create trigger falla_pago_cierre before insert on pagos for each row execute function falla_pago_cierre();set role authenticated;')
+  await assert.rejects(run(),/pago fallido/)
+  assert.deepEqual((await db.query('select id,checkin::text,checkout::text,canal_origen from reservas')).rows,[c])
+  await db.exec('reset role;drop trigger falla_pago_cierre on pagos;set role authenticated;')
+  assert.equal((await run()).rows[0].id,s.id)
+  assert.equal((await run()).rows[0].id,s.id)
+  const rs=(await db.query('select estado,canal_origen,checkin::text,checkout::text from reservas order by checkin')).rows
+  assert.deepEqual(rs.map(r=>[r.estado,r.canal_origen,r.checkin,r.checkout]),[
+   ['cerrada','booking','2026-12-20','2027-01-01'],['confirmada','directo','2027-01-01','2027-01-05'],['cerrada','booking','2027-01-05','2027-02-01']])
+  assert.equal((await db.query('select * from pagos')).rows.length,1)
+ }finally{await db.close()}
+})
+test('cierres exactos, parciales y de ambas plataformas solo ceden las noches reservadas',async()=>{
+ const {db,s}=await base();try{
+  await acceso(db);await db.exec(sql('../supabase/migrations/20261001_solicitudes_sobre_cierres.sql'))
+  for(const intervalos of [
+   [['booking','2027-01-01','2027-01-05']],
+   [['booking','2026-12-20','2027-01-03']],
+   [['airbnb','2027-01-03','2027-01-10']],
+   [['booking','2026-12-20','2027-01-03'],['airbnb','2027-01-03','2027-01-10']]
+  ]) {
+   await db.exec('begin')
+   const cierres=[]
+   for(const [canal,entrada,salida] of intervalos) cierres.push((await db.query(`insert into reservas(id,propiedad_id,canal_origen,estado,checkin,checkout) values(gen_random_uuid(),$1,$2,'cerrada',$3,$4) returning id,checkin::text,checkout::text,canal_origen`,[prop,canal,entrada,salida])).rows[0])
+   await db.exec('set local role authenticated')
+   await db.query('select confirmar_solicitud_sobre_cierres($1,$2,$3,$4)',[s.id,s.updated_at,JSON.stringify(pago),JSON.stringify(cierres.reverse())])
+   const remanentes=(await db.query("select checkin::text,checkout::text from reservas where estado='cerrada' order by checkin")).rows
+   const esperados=intervalos.flatMap(([,a,b])=>[...(a<'2027-01-01'?[{checkin:a,checkout:'2027-01-01'}]:[]),...(b>'2027-01-05'?[{checkin:'2027-01-05',checkout:b}]:[])])
+   assert.deepEqual(remanentes,esperados)
+   await db.exec('rollback')
+  }
+ }finally{await db.close()}
+})
+test('cierres con cliente, precio, pago o de origen manual nunca se reemplazan',async()=>{
+ const {db,s}=await base();try{
+  await acceso(db);await db.exec(sql('../supabase/migrations/20261001_solicitudes_sobre_cierres.sql'))
+  const c=(await db.query(`insert into reservas(id,propiedad_id,canal_origen,estado,checkin,checkout) values(gen_random_uuid(),$1,'airbnb','cerrada','2027-01-01','2027-01-05') returning id,checkin,checkout,canal_origen`,[prop])).rows[0]
+  const run=()=>db.query('select confirmar_solicitud_sobre_cierres($1,$2,$3,$4)',[s.id,s.updated_at,JSON.stringify(pago),JSON.stringify([c])])
+  for (const cambio of ["estado='pendiente'","precio_total=100","canal_origen='directo'","cliente_id=(select id from clientes limit 1)"]) {
+   await db.exec(`insert into clientes(nombre) values('Huesped');update reservas set ${cambio};`)
+   await assert.rejects(run(),/ocupadas/)
+   await db.exec("update reservas set estado='cerrada',precio_total=null,canal_origen='airbnb',cliente_id=null;")
+  }
+  await db.query(`insert into pagos(id,reserva_id,monto,confirmado) values(gen_random_uuid(),$1,10,false)`,[c.id])
+  await assert.rejects(run(),/ocupadas/)
+  assert.equal((await db.query('select * from reservas')).rows.length,1)
+ }finally{await db.close()}
+})
 async function formularioGeneral(db) {
  await acceso(db)
  await db.exec(sql('../supabase/migrations/20260930_solicitudes_publicas.sql'))
