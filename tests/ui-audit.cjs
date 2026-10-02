@@ -222,7 +222,14 @@ function match(row,u) {
    await page.evaluate(()=>document.body.classList.add('printing-recibo'));await page.emulateMedia({media:'print'});
    assert.equal(await page.locator('nav').isVisible(),false);assert.equal(await page.locator('#recibo-preview').isVisible(),true);
    await page.screenshot({path:`${output}/390-recibo-print.png`,fullPage:true});await page.emulateMedia({media:'screen'});
-   await page.goto(base+'/calendario');await page.getByRole('button',{name:/Timeline/}).click();await page.waitForLoadState('networkidle');assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+   await page.goto(base+'/calendario');await page.getByTestId('calendar-timeline').waitFor();await page.waitForLoadState('networkidle');assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+   assert.equal(await page.getByTestId('calendar-timeline').getAttribute('data-orientation'),'horizontal');
+   await page.getByTestId('calendar-timeline').screenshot({path:`${output}/390-timeline-horizontal.png`});
+   await page.getByRole('button',{name:'Vertical',exact:true}).click();
+   assert.equal(await page.getByTestId('calendar-timeline').getAttribute('data-orientation'),'vertical');
+   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+   await page.getByTestId('calendar-timeline').screenshot({path:`${output}/390-timeline-vertical.png`});
+   await page.getByRole('button',{name:'Horizontal',exact:true}).click();
    await page.getByRole('button',{name:'Mes siguiente',exact:true}).click();await page.getByRole('button',{name:/Grilla/}).click();
    await page.goto(base+'/reporte');fail=true;await page.getByRole('button',{name:'›',exact:true}).click();await page.waitForLoadState('networkidle');await page.screenshot({path:`${output}/390-report-error.png`,fullPage:true});fail=false;
    await page.getByRole('alert').waitFor();await page.getByRole('button',{name:'Reintentar',exact:true}).click();await page.waitForLoadState('networkidle');

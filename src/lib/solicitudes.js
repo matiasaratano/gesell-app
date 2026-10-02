@@ -1,4 +1,6 @@
 import { dinero } from './cobros.js'
+import { direccionAlojamiento } from './direccion-alojamiento.js'
+const separador = '━━━━━━━━━━━━━━━━━━━━━━━━━━━'
 export const fechaSolicitud = value => value?.split('-').reverse().join('/') || ''
 export const solicitudLista = s => !!s.propiedad_id && Number(s.precio_total) > 0
 export function vistaSolicitud(s, hoy) {
@@ -11,16 +13,33 @@ export function solicitudesAccionables(rows, propiedadId = '') {
 export function detalleSolicitud(s, propiedad) {
   if (!propiedad || !Number.isFinite(Number(s.precio_total)) || Number(s.precio_total) <= 0) throw new Error('Asigná un departamento y un precio antes de preparar la seña.')
   const sena = Math.round(Number(s.precio_total) * 30) / 100
+  const fechaLarga = valor => new Intl.DateTimeFormat('es-AR', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${valor}T12:00:00Z`))
+  const cuentaPropia = propiedad.alias_cbu?.trim() === 'maratano.mp'
   return [
-    `Hola ${s.datos_cliente.nombre}, este es el detalle de tu solicitud (sin confirmar):`,
-    `Alojamiento: ${propiedad.nombre}`,
-    `Ingreso: ${fechaSolicitud(s.checkin)} · Salida: ${fechaSolicitud(s.checkout)}`,
-    `Huéspedes: ${s.adultos} adultos y ${s.menores} menores`,
-    `Total: ${dinero(s.precio_total)}`,
-    `Seña para confirmar (30%): ${dinero(sena)}`,
-    `Saldo después de esa seña: ${dinero(Number(s.precio_total) - sena)}`,
-    propiedad.alias_cbu ? `Alias para transferir: ${propiedad.alias_cbu}` : '',
-    'Esta solicitud no bloquea fechas ni garantiza disponibilidad. Consultanos antes de transferir. La reserva se confirma cuando verificamos el pago y la disponibilidad.',
+    `Detalle de tu solicitud – ${propiedad.marca || 'Departamentos Norte'}`,
+    `\n${separador}\nDETALLES DE LA RESERVA\n${separador}`,
+    `• Departamento: ${propiedad.nombre}`,
+    direccionAlojamiento(propiedad) ? `• Dirección: ${direccionAlojamiento(propiedad)}` : '',
+    `• Check-in: ${fechaLarga(s.checkin)} a partir de las 14:00 hs.`,
+    `• Check-out: ${fechaLarga(s.checkout)} hasta las 10:00 hs.`,
+    `• Duración: ${Math.round((Date.parse(s.checkout) - Date.parse(s.checkin)) / 86400000)} noches`,
+    s.adultos != null ? `• Huéspedes: ${s.adultos} adultos y ${s.menores || 0} menores` : '',
+    `• Costo total: ${dinero(s.precio_total)}`,
+    `• Seña para confirmar (30%): ${dinero(sena)}`,
+    `• Saldo a pagar al ingresar: ${dinero(Number(s.precio_total) - sena)}`,
+    `\n${separador}\nMÉTODO DE PAGO\n${separador}`,
+    'Por favor, realizá la seña dentro de las 24 hs. Si pasó el plazo, escribinos antes de transferir.',
+    'Transferencia bancaria o Mercado Pago.',
+    ...(cuentaPropia ? ['Cuenta a nombre de Matías Nicolás Aratano:', '• CVU: 0000003100056995782339'] : []),
+    propiedad.alias_cbu ? `• Alias: ${propiedad.alias_cbu}` : '',
+    cuentaPropia ? '• CUIT/CUIL: 23-35727388-9' : '',
+    '\nUna vez realizado el pago, envianos el comprobante para confirmar la reserva.',
+    `\n${separador}\nPOLÍTICAS Y CONDICIONES\n${separador}`,
+    '• No incluye ropa blanca (sábanas ni toallas).',
+    '• Solo para familias (no se permiten grupos de jóvenes).',
+    '• No está permitido realizar fiestas ni eventos.',
+    propiedad.restriccion_vehiculos ? '• No está permitido ingresar vehículos al predio (motos, cuatriciclos, etc.).' : '',
+    '• La reserva se confirma cuando verificamos el depósito del 30% y la disponibilidad.',
   ].filter(Boolean).join('\n')
 }
 export function fichaSolicitud(s) {
@@ -34,7 +53,7 @@ export function voucherSolicitud(r) {
     'CONFIRMACIÓN DE RESERVA',
     `Titular: ${[r.clientes?.nombre, r.clientes?.apellido].filter(Boolean).join(' ')}`,
     `Alojamiento: ${r.propiedades?.nombre || ''}`,
-    r.propiedades?.direccion ? `Dirección: ${r.propiedades.direccion}` : '',
+    direccionAlojamiento(r.propiedades) ? `Dirección: ${direccionAlojamiento(r.propiedades)}` : '',
     `Ingreso: ${fechaSolicitud(r.checkin)} · Salida: ${fechaSolicitud(r.checkout)}`,
     `Huéspedes: ${r.adultos} adultos y ${r.menores || 0} menores`,
     `Precio total: ${dinero(r.precio_total)}`,
@@ -42,4 +61,15 @@ export function voucherSolicitud(r) {
     `Saldo pendiente: ${dinero(Math.max(0, Number(r.precio_total) - recibido))}`,
     'Tu reserva está confirmada. Conservá este detalle para tu estadía.',
   ].filter(Boolean).join('\n')
+}
+
+export function datosVoucherReserva(r) {
+  return {
+    titular: [r.clientes?.nombre, r.clientes?.apellido].filter(Boolean).join(' '),
+    checkin: r.checkin || '', checkout: r.checkout || '',
+    adultos: String(r.adultos ?? ''), menores: String(r.menores ?? 0),
+    total: r.precio_total == null ? '' : String(r.precio_total),
+    pagado: String((r.pagos || []).filter(p=>p.confirmado === true).reduce((sum,p)=>sum+Number(p.monto),0)),
+    verificado: ['confirmada','finalizada'].includes(r.estado) && (r.pagos || []).some(p=>p.confirmado === true && Number(p.monto)>0),
+  }
 }

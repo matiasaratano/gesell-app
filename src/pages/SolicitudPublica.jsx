@@ -47,8 +47,8 @@ export default function SolicitudPublica({ general = false }) {
     } catch (e) { setError(e.message || 'No se pudo conectar. Intentá nuevamente.') }
     finally { lock.current = false; setBusy(false) }
   }
-  return <main className="cobros cobros-page solicitud-publica"><h1>Solicitud de reserva</h1>
-    {loading ? <p role="status">Cargando…</p> : enviado ? <div role="status"><h2>Datos enviados</h2><p>Revisaremos la disponibilidad y te contactaremos con el detalle para la seña. Las fechas todavía no están reservadas.</p></div> : info && <>
+  return <main className={`cobros cobros-page solicitud-publica${enviado ? ' solicitud-enviada' : ''}`}><header className="solicitud-marca"><span className="solicitud-monograma" aria-hidden="true">DN</span><div><strong>Departamentos Norte</strong><span>Villa Gesell</span></div></header><h1>Solicitud de reserva</h1>
+    {loading ? <p role="status">Cargando…</p> : enviado ? <section className="solicitud-exito" role="status"><span className="solicitud-exito-icono" aria-hidden="true">✓</span><h2>Datos enviados</h2><p>Gracias por contactarnos. Recibimos tu solicitud.</p><p>Revisaremos la disponibilidad y te contactaremos con el detalle para la seña.</p><p className="solicitud-exito-nota">Las fechas todavía no están reservadas.</p></section> : info && <>
       {!general && <><h2>{info.alojamiento}</h2><p>{fechaSolicitud(info.checkin)} al {fechaSolicitud(info.checkout)} · {info.adultos} adultos · {info.menores} menores</p></>}
       <p>Completar este formulario no confirma la reserva ni bloquea las fechas.</p>
       <form key={token} onSubmit={enviar}>

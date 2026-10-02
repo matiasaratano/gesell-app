@@ -30,6 +30,15 @@
 .acceso-sesion span { overflow-wrap: anywhere; }
 @media print { .acceso-sesion { display: none !important; } }
 .solicitud-publica { max-width: 700px; margin: auto; }
+.solicitud-marca { display: flex; align-items: center; gap: 12px; padding: 16px 0 24px; border-bottom: 1px solid #dce3de; margin-bottom: 24px; }
+.solicitud-monograma { display: grid; place-items: center; flex: 0 0 48px; height: 48px; background: #2d5a3d; color: white; border-radius: 8px; font-size: 20px; font-weight: 700; }
+.solicitud-marca strong, .solicitud-marca div > span { display: block; }
+.solicitud-marca div > span { color: #69736d; font-size: 13px; margin-top: 4px; }
+.solicitud-enviada { min-height: 85dvh; box-sizing: border-box; }
+.solicitud-exito { padding: 32px 0; max-width: 520px; }
+.solicitud-exito-icono { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; color: #2d5a3d; background: #dfefe5; font-size: 26px; margin-bottom: 20px; }
+.solicitud-exito p { line-height: 1.65; }
+.solicitud-exito-nota { padding: 14px 0; border-top: 1px solid #dce3de; color: #5b6660; font-size: 14px; margin-top: 24px; }
 .solicitud-publica h2 { font-size: 20px; }
 .solicitud-publica .pago-fields { margin: 20px 0; }
 .solicitud-publica input { min-width: 0; width: 100%; box-sizing: border-box; }

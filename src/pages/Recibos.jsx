@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import { direccionAlojamiento } from '../lib/direccion-alojamiento.js';
 import { useConfirmacion } from '../lib/confirmacion.js';
 import { useSearchParams } from 'react-router-dom';
 import SeleccionRecibo from '../components/SeleccionRecibo';
@@ -262,7 +263,8 @@ function PanelRecibo({ showToast, reserva = null, pago = null, verificar, verifi
     setClientesRes([])
   }
 
-  const deptoData = reserva?.propiedades || propiedades.find(p => p.id === depto) || {}
+  const propiedadRecibo = reserva?.propiedades || propiedades.find(p => p.id === depto) || {}
+  const deptoData = { ...propiedadRecibo, direccion: direccionAlojamiento(propiedadRecibo) }
   const esMensualidad = concepto === 'mensualidad' && !!inicial.periodo;
   const mesTexto = esMensualidad ? fmtMes(inicial.periodo) : '';
   const conceptoTexto = esMensualidad ? 'alquiler' : (CONCEPTOS[concepto] || concepto);

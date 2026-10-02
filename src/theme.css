@@ -58,6 +58,11 @@ a { color: var(--ui-primary); }
   .tarea-grupo .tarea-acciones { margin-top: 4px; }
 }
 .app-nav { align-items: center; }
+.voucher-verificado { display: flex; align-items: flex-start; gap: 10px; margin-top: 20px; font-size: 14px; line-height: 1.5; }
+.page-mensajes .voucher-verificado input { width: 20px; height: 20px; min-height: 20px; flex: 0 0 20px; accent-color: #2d5a3d; }
+.timeline-orientacion { display: flex; gap: 3px; padding: 3px; background: #f0f0f0; border-radius: 8px; }
+.timeline-orientacion button { min-height: 40px; padding: 6px 12px; font-size: 12px; font-weight: 600; border: 0; border-radius: 6px; background: transparent; color: #555; cursor: pointer; }
+.timeline-orientacion button[aria-pressed="true"] { background: #2d5a3d; color: white; }
 .campo-reserva, .campo-mensaje { min-width: 0; }
 :is(.page-nueva, .page-mensajes) input[type="date"] {
   display: block; width: 100%; min-width: 0; min-inline-size: 0; max-width: 100%;

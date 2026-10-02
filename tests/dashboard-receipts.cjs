@@ -223,6 +223,9 @@ function matches(row, url) {
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
         calendarMode = true;
         await page.goto(base + '/calendario');
+        await page.getByTestId('calendar-timeline').waitFor();
+        assert.equal(await page.getByTestId('calendar-timeline').getAttribute('data-orientation'),'horizontal');
+        await page.getByRole('button',{name:/Grilla/}).click();
         await page.getByTestId('calendar-grid').waitFor();
         await page.evaluate(() => {
           window.originalGrid = document.querySelector('[data-testid="calendar-grid"]');
@@ -248,6 +251,12 @@ function matches(row, url) {
         await releaseSync();
         await page.getByText(/No se pudo actualizar la vista. Se muestran las fechas anteriores/).waitFor();
         assert.equal(await page.evaluate(() => window.originalGrid.isConnected), true);
+        await page.getByRole('button',{name:/Timeline/}).click();
+        await page.getByTestId('calendar-timeline').screenshot({path:`${output}/${width}-timeline-horizontal.png`});
+        await page.getByRole('button',{name:'Vertical',exact:true}).click();
+        assert.equal(await page.getByTestId('calendar-timeline').getAttribute('data-orientation'),'vertical');
+        assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+        await page.getByTestId('calendar-timeline').screenshot({path:`${output}/${width}-timeline-vertical.png`});
         assert.deepEqual(errors, []);
         console.log(JSON.stringify({ width, errors, paymentCalls: calls.length, paymentsRecorded: payments.length - 2 }));
       } finally { await context.close(); }

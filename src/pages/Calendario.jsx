@@ -177,7 +177,8 @@ export default function Calendario() {
   const [modalBloqueo, setModalBloqueo] = useState(false)
   const [bloqueoSeleccionado, setBloqueoSeleccionado] = useState(null) // bloqueo a abrir
 
-  const [vista, setVista] = useState('grilla') // 'grilla' | 'timeline'
+  const [vista, setVista] = useState('timeline')
+  const [orientacion, setOrientacion] = useState('horizontal')
 
   // Selección de rango
   const [rangoInicio, setRangoInicio] = useState(null)
@@ -658,6 +659,7 @@ export default function Calendario() {
           <button
             type="button"
             onClick={() => setVista('grilla')}
+            aria-pressed={vista === 'grilla'}
             style={{
               border: 'none',
               padding: '6px 12px',
@@ -675,6 +677,7 @@ export default function Calendario() {
           <button
             type="button"
             onClick={() => setVista('timeline')}
+            aria-pressed={vista === 'timeline'}
             style={{
               border: 'none',
               padding: '6px 12px',
@@ -690,6 +693,7 @@ export default function Calendario() {
             📈 Timeline
           </button>
         </div>
+        {vista === 'timeline' && <div className="timeline-orientacion" role="group" aria-label="Orientación del calendario">{['horizontal','vertical'].map(valor => <button type="button" key={valor} aria-pressed={orientacion === valor} onClick={()=>setOrientacion(valor)}>{valor === 'horizontal' ? 'Horizontal' : 'Vertical'}</button>)}</div>}
       </div>
 
       <div style={{ ...s.controlsRow, gap: isMobile ? 6 : 8 }}>
@@ -930,6 +934,7 @@ export default function Calendario() {
       {/* Grid del calendario / Timeline */}
       {error ? null : loading ? <div role="status" style={{ padding: '32px 16px', textAlign: 'center', color: '#555' }}>Cargando fechas…</div> : vista === 'timeline' ? (
         <TimelineView
+          orientacion={orientacion}
           dias={diasMesActual}
           propiedades={propiedades}
           reservas={reservas}
@@ -1588,6 +1593,7 @@ function ModalAbrirBloqueo({ bloqueo, propiedades, onAbrir, onClose }) {
 
 // ─── Componente Timeline Horizontal ───────────────────────────────────────────
 function TimelineView({
+  orientacion,
   dias,
   propiedades,
   reservas,
@@ -1597,12 +1603,10 @@ function TimelineView({
   rangoPropId,
   handleCellClick,
   setDetalle,
-  setDiaSeleccionado,
   propColor,
   formatFecha,
 }) {
-  const device = useDeviceType()
-  const isMobile = device === 'mobile'
+  const vertical = orientacion === 'vertical'
   const totalDias = dias.length
   const scrollRef = useRef(null)
   const hoyDs = hoySrt()
@@ -1611,22 +1615,22 @@ function TimelineView({
   useEffect(() => {
     if (!scrollRef.current) return
     const hoyIdx = dias.findIndex(d => d.ds === hoyDs)
-    if (hoyIdx === -1) return
-    // Each column is 44px wide; first column (sticky) is 130px
-    const colWidth = 44
-    const stickyWidth = 130
+    if (hoyIdx === -1) { scrollRef.current.scrollLeft = 0; scrollRef.current.scrollTop = 0; return }
+    if (vertical) { scrollRef.current.scrollLeft = 0; scrollRef.current.scrollTop = Math.max(0, hoyIdx * 36 - 72); return }
+    const colWidth = 35
+    const stickyWidth = 112
     const todayOffset = stickyWidth + hoyIdx * colWidth
     const containerWidth = scrollRef.current.clientWidth
     const scrollTo = todayOffset - containerWidth / 2 + colWidth / 2
     scrollRef.current.scrollLeft = Math.max(0, scrollTo)
-  }, [dias, hoyDs])
+  }, [dias, hoyDs, vertical])
 
   // Filtrar propiedades a mostrar
   const propsVisibles = propiedades.filter(p => filtro === 'todas' || p.id === filtro)
 
   return (
     <div style={{
-      borderRadius: 12,
+      borderRadius: 8,
       border: '1px solid #e8e8e8',
       boxShadow: '0 2px 12px rgba(0,0,0,0.06)',
       overflow: 'hidden',
@@ -1634,11 +1638,12 @@ function TimelineView({
       marginBottom: 16,
     }}>
       {/* Contenedor scrolleable */}
-      <div ref={scrollRef} style={{ overflowX: 'auto', width: '100%' }}>
+      <div ref={scrollRef} data-testid="calendar-timeline" data-orientation={orientacion} style={{ overflow: 'auto', width: '100%', maxHeight: vertical ? '65vh' : undefined }}>
         <div style={{
           display: 'grid',
-          gridTemplateColumns: `130px repeat(${totalDias}, 44px)`,
-          minWidth: 130 + totalDias * 44,
+          gridTemplateColumns: vertical ? `64px repeat(${propsVisibles.length}, minmax(110px, 1fr))` : `112px repeat(${totalDias}, 34px)`,
+          gridTemplateRows: vertical ? `44px repeat(${totalDias}, 36px)` : `44px repeat(${propsVisibles.length}, 44px)`,
+          minWidth: vertical ? 64 + propsVisibles.length * 111 : 112 + totalDias * 35,
           background: '#e8e8e8',
           gap: '1px',
         }}>
@@ -1654,22 +1659,28 @@ function TimelineView({
             alignItems: 'center',
             position: 'sticky',
             left: 0,
+            top: 0,
             zIndex: 20,
             borderRight: '2px solid #ddd',
             textTransform: 'uppercase',
             letterSpacing: '0.04em',
           }}>
-            Propiedad
+            {vertical ? 'Día' : 'Propiedad'}
           </div>
-          {dias.map(day => {
+          {dias.map((day, dayIndex) => {
             const esFinde = day.dow === 0 || day.dow === 6
             const esHoyTl = day.ds === hoyDs
             return (
               <div
                 key={day.d}
                 style={{
+                  gridColumn: vertical ? 1 : dayIndex + 2,
+                  gridRow: vertical ? dayIndex + 2 : 1,
+                  position: vertical ? 'sticky' : undefined,
+                  left: vertical ? 0 : undefined,
+                  zIndex: vertical ? 10 : undefined,
                   background: esHoyTl ? '#e8f5ec' : esFinde ? '#ececec' : '#f5f5f5',
-                  padding: '8px 0',
+                  padding: vertical ? '2px 0' : '6px 0',
                   textAlign: 'center',
                   fontWeight: esHoyTl ? 700 : 600,
                   fontSize: 10,
@@ -1705,21 +1716,22 @@ function TimelineView({
               <Fragment key={prop.id}>
                 {/* Columna Sticky: Nombre de la propiedad */}
                 <div style={{
-                  gridColumn: 1,
-                  gridRow: rowGridIndex,
+                  gridColumn: vertical ? propIdx + 2 : 1,
+                  gridRow: vertical ? 1 : rowGridIndex,
                   background: '#ffffff',
-                  padding: '12px 10px',
+                  padding: '8px',
                   fontWeight: 600,
                   fontSize: 12,
                   color: '#333',
                   display: 'flex',
                   alignItems: 'center',
                   position: 'sticky',
-                  left: 0,
+                  left: vertical ? undefined : 0,
+                  top: vertical ? 0 : undefined,
                   zIndex: 10,
                   borderRight: '2px solid #ddd',
                   boxShadow: '4px 0 8px rgba(0,0,0,0.03)',
-                  height: 52,
+                  height: 44,
                   boxSizing: 'border-box',
                 }}>
                   <span style={{
@@ -1764,24 +1776,31 @@ function TimelineView({
                   const esHoyCell = day.ds === hoyDs
                   const diaPasado = esDiaPasado(day.ds)
                   return (
-                    <div
+                    <button
+                      type="button"
+                      aria-label={`${prop.nombre} · ${formatFecha(ds)}`}
                       key={day.d}
                       onClick={() => handleCellClick(ds, prop.id)}
                       style={{
-                        gridColumn: dIdx + 2,
-                        gridRow: rowGridIndex,
+                        gridColumn: vertical ? propIdx + 2 : dIdx + 2,
+                        gridRow: vertical ? dIdx + 2 : rowGridIndex,
+                        borderStyle: 'solid',
+                        borderWidth: 0,
+                        appearance: 'none',
+                        padding: 0,
+                        minHeight: 0,
                         background: (isStart || isEnd || isSingleSelection) ? '#2d5a3d' : isSelected ? '#E8F5EC' : esHoyCell ? '#f0faf4' : diaPasado ? '#ECEFF1' : bgCell,
                         cursor: 'pointer',
                         borderRadius: borderRadiusSelection,
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        height: 52,
+                        height: vertical ? 36 : 44,
                         boxSizing: 'border-box',
                         position: 'relative',
                         borderBottom: '1px solid #e8e8e8',
-                        borderLeft: esHoyCell ? '2px solid #2d5a3d' : undefined,
-                        borderRight: esHoyCell ? '2px solid #2d5a3d' : undefined,
+                        borderLeft: esHoyCell ? '2px solid #2d5a3d' : '0 solid transparent',
+                        borderRight: esHoyCell ? '2px solid #2d5a3d' : '0 solid transparent',
                       }}
                     />
                   )
@@ -1824,10 +1843,11 @@ function TimelineView({
                         setDetalle(r)
                       }}
                       style={{
-                        gridColumnStart: startCol,
-                        gridColumnEnd: endCol,
-                        gridRow: rowGridIndex,
-                        margin: '6px 2px',
+                        gridColumnStart: vertical ? propIdx + 2 : startCol,
+                        gridColumnEnd: vertical ? propIdx + 3 : endCol,
+                        gridRowStart: vertical ? startCol : rowGridIndex,
+                        gridRowEnd: vertical ? endCol : rowGridIndex + 1,
+                        margin: vertical ? '2px 4px' : '5px 1px',
                         padding: '4px 8px',
                         background: esReservaPasada(r) ? '#6B7280' : propColor(r.propiedad_id),
                         border: 'none',
@@ -1837,15 +1857,17 @@ function TimelineView({
                         fontWeight: 600,
                         cursor: 'pointer',
                         zIndex: 5,
-                        whiteSpace: 'nowrap',
+                        whiteSpace: vertical ? 'normal' : 'nowrap',
+                        overflowWrap: 'anywhere',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         textAlign: 'left',
                         display: 'flex',
                         alignItems: 'center',
                         boxShadow: '0 2px 4px rgba(0,0,0,0.12)',
-                        height: 38,
-                        alignSelf: 'center',
+                        minHeight: 0,
+                        height: vertical ? 'auto' : 34,
+                        alignSelf: vertical ? 'stretch' : 'center',
                         opacity: esReservaPasada(r) ? 0.72 : 1,
                       }}
                       title={`${nombreReserva(r)} — ${r.propiedades?.nombre} (${formatFecha(r.checkin)} al ${formatFecha(r.checkout)})`}
