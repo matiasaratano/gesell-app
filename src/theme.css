@@ -58,6 +58,7 @@ a { color: var(--ui-primary); }
   .tarea-grupo .tarea-acciones { margin-top: 4px; }
 }
 .app-nav { align-items: center; }
+.app-nav-mobile { display: none; }
 .voucher-verificado { display: flex; align-items: flex-start; gap: 10px; margin-top: 20px; font-size: 14px; line-height: 1.5; }
 .page-mensajes .voucher-verificado input { width: 20px; height: 20px; min-height: 20px; flex: 0 0 20px; accent-color: #2d5a3d; }
 .timeline-orientacion { display: flex; gap: 3px; padding: 3px; background: #f0f0f0; border-radius: 8px; }
@@ -190,10 +191,14 @@ a { color: var(--ui-primary); }
   .pago-rapido { padding: 18px; }
   .app-nav { padding: 6px 8px !important; gap: 0 !important; }
   .app-nav a { padding: 6px 10px !important; font-size: 12px !important; }
-  .app-nav { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px !important; }
-  .app-nav-links { display: contents; }
+  .app-nav { display: flex !important; gap: 4px !important; }
+  .app-nav-mobile { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-width: 0; font-size: 14px; font-weight: 600; }
+  .app-nav-mobile button { min-height: 44px; padding: 6px 14px; border: 1px solid var(--ui-border); border-radius: 8px; background: white; color: var(--ui-text); font: inherit; font-size: 13px; cursor: pointer; }
+  .app-nav-links, .app-nav .app-salir { display: none; }
+  .app-nav-abierta { max-height: 85dvh; overflow-y: auto; }
+  .app-nav-abierta .app-nav-links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); flex-basis: 100%; padding-top: 4px; border-top: 1px solid var(--ui-border); }
   .app-nav a, .app-nav .app-salir { box-sizing: border-box; min-height: 44px; }
-  .app-nav .app-salir { align-self: stretch; width: 100%; margin: 0; padding: 6px 10px; font-size: 12px; text-align: left; }
+  .app-nav-abierta .app-salir { display: block; width: auto; margin: 4px 0 0 auto; padding: 6px 12px; font-size: 12px; }
   .report-metrics { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
   .report-metrics > * { padding: 14px !important; }
   .report-metric-value { font-size: 23px !important; line-height: 1.2 !important; }

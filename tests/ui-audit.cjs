@@ -61,6 +61,21 @@ function match(row,u) {
    return route.abort();
   });
   await login(page,base);
+  if(width <= 640) {
+   await page.goto(base+'/');
+   await page.waitForLoadState('networkidle');
+   const nav=page.getByRole('navigation',{name:'Navegación principal'});
+   assert.ok(await nav.evaluate(el=>el.getBoundingClientRect().height)<70,'Mobile navigation stays a single compact bar');
+   assert.equal(await nav.getByRole('link',{name:/Calendario/}).isVisible(),false);
+   await nav.getByRole('button',{name:'Menú',exact:true}).click();
+   assert.equal(await nav.getByRole('button',{name:'Cerrar sesión',exact:true}).isVisible(),true);
+   await page.screenshot({path:`${output}/${width}-menu-abierto.png`});
+   await nav.getByRole('link',{name:/Calendario/}).click();
+   assert.equal(await nav.getByRole('button',{name:'Menú',exact:true}).getAttribute('aria-expanded'),'false');
+   await nav.getByRole('button',{name:'Menú',exact:true}).click();
+   await page.keyboard.press('Escape');
+   assert.equal(await nav.getByRole('button',{name:'Menú',exact:true}).getAttribute('aria-expanded'),'false');
+  }
   const routes=['/','/calendario','/nueva','/cobros','/reservas/r1?vista=pagos','/mensajes','/recibos','/admin?seccion=propiedades','/admin?seccion=reservas','/admin?seccion=clientes','/reporte'];
   for(const route of routes) {
    const start=errors.length;await page.goto(base+route);await page.waitForLoadState('networkidle');

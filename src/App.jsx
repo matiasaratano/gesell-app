@@ -37,6 +37,7 @@ function Toast({ msg, onClose }) {
 
 function Nav({ salir, email }) {
   const { pathname } = useLocation()
+  const [menuAbierto, setMenuAbierto] = useState(false)
   const links = [
     { to: '/', label: '🏠 Inicio' },
     { to: '/calendario', label: '📅 Calendario' },
@@ -49,15 +50,20 @@ function Nav({ salir, email }) {
     { to: '/reporte', label: '📊 Reporte' },
   ]
   return (
-    <nav className="app-nav" aria-label="Navegación principal" style={{
+    <nav className={`app-nav${menuAbierto ? ' app-nav-abierta' : ''}`} aria-label="Navegación principal" onKeyDown={e => { if (e.key === 'Escape') setMenuAbierto(false) }} style={{
       display: 'flex', gap: 4, padding: '10px 20px',
       borderBottom: '1px solid #e0dbd3', background: '#fff',
       position: 'sticky', top: 0, zIndex: 50, flexWrap: 'wrap',
     }}>
-      <div className="app-nav-links">{links.map(l => (
+      <div className="app-nav-mobile">
+        <span>{links.find(l => l.to === pathname)?.label || 'Reserva'}</span>
+        <button type="button" aria-expanded={menuAbierto} aria-controls="app-nav-links" onClick={() => setMenuAbierto(abierto => !abierto)}>{menuAbierto ? 'Cerrar menú' : 'Menú'}</button>
+      </div>
+      <div className="app-nav-links" id="app-nav-links">{links.map(l => (
         <Link
           key={l.to}
           to={l.to}
+          onClick={() => setMenuAbierto(false)}
           aria-current={pathname === l.to ? 'page' : undefined}
           style={{
             padding: '6px 14px', borderRadius: 8, fontSize: 13, fontWeight: 500,

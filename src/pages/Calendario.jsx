@@ -1728,6 +1728,7 @@ function TimelineView({
                   display: 'flex',
                   alignItems: 'center',
                   writingMode: vertical ? 'vertical-rl' : undefined,
+                  gap: 6,
                   position: 'sticky',
                   left: vertical ? undefined : 0,
                   top: vertical ? 0 : undefined,
@@ -1742,7 +1743,7 @@ function TimelineView({
                     height: 8,
                     borderRadius: '50%',
                     background: propColor(prop.id),
-                    marginRight: 6,
+                    flexShrink: 0,
                     display: 'inline-block',
                   }} />
                   <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
