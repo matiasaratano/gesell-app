@@ -71,11 +71,11 @@ function genFicha(p) {
 
   return `Asunto: Solicitud de reserva (sin confirmar) – ${p.nombre}\n\n${intro}\n\n`
     + SEP + 'POLÍTICAS DE PAGO\n' + SEP
-    + '  • Método de pago: Transferencia bancaria.\n'
-    + '  • Seña: 30% del total. Consultanos la disponibilidad antes de transferir.\n'
-    + '  • Saldo restante: 70% en efectivo al momento del check-in.\n'
-    + '  • Una vez recibido el formulario, revisamos disponibilidad y te enviamos el detalle para pagar. Completarlo no bloquea fechas.\n'
-    + '  • La reserva se confirma cuando verificamos el pago y la disponibilidad.\n\n'
+    + '  • Método de pago:\n'
+    + '  • Seña: 30% del total. Transferencia bancaria.\n'
+    + '  • Saldo restante: 70% en efectivo o transferencia al ingresar.\n'
+    + '  • Una vez recibida la ficha, revisamos disponibilidad y te enviamos el detalle para pagar. Completarla no bloquea fechas.\n'
+    + '  • La reserva se confirma al verificar el pago.\n\n'
     + SEP + 'FORMULARIO DE INSCRIPCIÓN\n' + SEP
     + 'Por favor, completá los datos y envíalos por WhatsApp al +54 9 2255-536640:\n\n'
     + 'Datos del titular:\n'

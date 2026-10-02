@@ -1616,7 +1616,7 @@ function TimelineView({
     if (!scrollRef.current) return
     const hoyIdx = dias.findIndex(d => d.ds === hoyDs)
     if (hoyIdx === -1) { scrollRef.current.scrollLeft = 0; scrollRef.current.scrollTop = 0; return }
-    if (vertical) { scrollRef.current.scrollLeft = 0; scrollRef.current.scrollTop = Math.max(0, hoyIdx * 36 - 72); return }
+    if (vertical) { scrollRef.current.scrollLeft = 0; scrollRef.current.scrollTop = Math.max(0, hoyIdx * 35 - 35); return }
     const colWidth = 35
     const stickyWidth = 112
     const todayOffset = stickyWidth + hoyIdx * colWidth
@@ -1631,6 +1631,8 @@ function TimelineView({
   return (
     <div style={{
       borderRadius: 8,
+      width: vertical ? 'fit-content' : '100%',
+      maxWidth: '100%',
       border: '1px solid #e8e8e8',
       boxShadow: '0 2px 12px rgba(0,0,0,0.06)',
       overflow: 'hidden',
@@ -1641,9 +1643,9 @@ function TimelineView({
       <div ref={scrollRef} data-testid="calendar-timeline" data-orientation={orientacion} style={{ overflow: 'auto', width: '100%', maxHeight: vertical ? '65vh' : undefined }}>
         <div style={{
           display: 'grid',
-          gridTemplateColumns: vertical ? `64px repeat(${propsVisibles.length}, minmax(110px, 1fr))` : `112px repeat(${totalDias}, 34px)`,
-          gridTemplateRows: vertical ? `44px repeat(${totalDias}, 36px)` : `44px repeat(${propsVisibles.length}, 44px)`,
-          minWidth: vertical ? 64 + propsVisibles.length * 111 : 112 + totalDias * 35,
+          gridTemplateColumns: vertical ? `44px repeat(${propsVisibles.length}, 44px)` : `112px repeat(${totalDias}, 34px)`,
+          gridTemplateRows: vertical ? `112px repeat(${totalDias}, 34px)` : `44px repeat(${propsVisibles.length}, 44px)`,
+          minWidth: vertical ? 44 + propsVisibles.length * 45 : 112 + totalDias * 35,
           background: '#e8e8e8',
           gap: '1px',
         }}>
@@ -1715,7 +1717,7 @@ function TimelineView({
             return (
               <Fragment key={prop.id}>
                 {/* Columna Sticky: Nombre de la propiedad */}
-                <div style={{
+                <div title={prop.nombre} style={{
                   gridColumn: vertical ? propIdx + 2 : 1,
                   gridRow: vertical ? 1 : rowGridIndex,
                   background: '#ffffff',
@@ -1725,13 +1727,14 @@ function TimelineView({
                   color: '#333',
                   display: 'flex',
                   alignItems: 'center',
+                  writingMode: vertical ? 'vertical-rl' : undefined,
                   position: 'sticky',
                   left: vertical ? undefined : 0,
                   top: vertical ? 0 : undefined,
                   zIndex: 10,
                   borderRight: '2px solid #ddd',
                   boxShadow: '4px 0 8px rgba(0,0,0,0.03)',
-                  height: 44,
+                  height: vertical ? 112 : 44,
                   boxSizing: 'border-box',
                 }}>
                   <span style={{
@@ -1795,7 +1798,7 @@ function TimelineView({
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        height: vertical ? 36 : 44,
+                        height: vertical ? 34 : 44,
                         boxSizing: 'border-box',
                         position: 'relative',
                         borderBottom: '1px solid #e8e8e8',
@@ -1857,7 +1860,8 @@ function TimelineView({
                         fontWeight: 600,
                         cursor: 'pointer',
                         zIndex: 5,
-                        whiteSpace: vertical ? 'normal' : 'nowrap',
+                        whiteSpace: 'nowrap',
+                        writingMode: vertical ? 'vertical-rl' : undefined,
                         overflowWrap: 'anywhere',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',

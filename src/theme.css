@@ -190,6 +190,10 @@ a { color: var(--ui-primary); }
   .pago-rapido { padding: 18px; }
   .app-nav { padding: 6px 8px !important; gap: 0 !important; }
   .app-nav a { padding: 6px 10px !important; font-size: 12px !important; }
+  .app-nav { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px !important; }
+  .app-nav-links { display: contents; }
+  .app-nav a, .app-nav .app-salir { box-sizing: border-box; min-height: 44px; }
+  .app-nav .app-salir { align-self: stretch; width: 100%; margin: 0; padding: 6px 10px; font-size: 12px; text-align: left; }
   .report-metrics { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
   .report-metrics > * { padding: 14px !important; }
   .report-metric-value { font-size: 23px !important; line-height: 1.2 !important; }
