@@ -46,6 +46,63 @@ async function enlace(db,s) {
  return (await db.query('select crear_enlace_solicitud($1) as token',[s.id])).rows[0].token
 }
 const datos={nombre:'Ana',apellido:'Prueba',dni:'12345678',whatsapp:'1123456789',email:'ana@example.com',domicilio:'Calle 1',ciudad:'Villa Gesell'}
+async function cierreDirecto(db) {
+ await acceso(db)
+ const migration=sql('../supabase/migrations/20261003_reserva_dentro_cierre.sql')
+ await db.exec(migration);await db.exec(migration)
+ const c=(await db.query(`insert into reservas(id,propiedad_id,canal_origen,estado,checkin,checkout,notas_internas) values(gen_random_uuid(),$1,'booking','cerrada','2027-01-01','2027-01-20','CLOSED') returning id,checkin::text,checkout::text,canal_origen`,[prop])).rows[0]
+ const b={id:randomUUID(),propiedad_id:prop,canal_origen:'directo',estado:'confirmada',checkin:'2027-01-08',checkout:'2027-01-12',precio_total:1000,adultos:2,menores:0}
+ await db.exec('set role authenticated')
+ const run=(booking=b,payment=null,cs=[c])=>db.query('select crear_reserva_dentro_cierre($1,$2,$3,$4,$5) as id',[JSON.stringify(booking),JSON.stringify(datos),payment?JSON.stringify(payment):null,c.id,JSON.stringify(cs)])
+ return {c,b,run}
+}
+test('reserva directa divide cierre sin sync y reintentar no duplica cliente ni pago',async()=>{
+ const {db}=await base();try{
+  const {b,run}=await cierreDirecto(db)
+  assert.equal((await run(b,pago)).rows[0].id,b.id)
+  assert.equal((await run(b,pago)).rows[0].id,b.id)
+  const rows=(await db.query('select checkin::text,checkout::text,estado,canal_origen,notas_internas from reservas order by checkin')).rows
+  assert.deepEqual(rows.map(r=>[r.checkin,r.checkout,r.estado]),[['2027-01-01','2027-01-08','cerrada'],['2027-01-08','2027-01-12','confirmada'],['2027-01-12','2027-01-20','cerrada']])
+  assert.equal(rows[0].notas_internas,'CLOSED');assert.equal(rows[2].canal_origen,'booking')
+  assert.equal((await db.query('select * from pagos')).rows.length,1)
+  assert.equal((await db.query('select * from clientes')).rows.length,1)
+ }finally{await db.close()}
+})
+test('reserva directa revierte cierres ante pago invalido y rechaza falta de consentimiento o rango externo',async()=>{
+ const {db}=await base();try{
+  const {c,b,run}=await cierreDirecto(db)
+  await assert.rejects(run(b,null,[]),/cierres cambiaron/)
+  await assert.rejects(run({...b,checkin:'2026-12-31'}),/fuera de su rango/)
+  await assert.rejects(run(b,{...pago,monto:-1}))
+  assert.equal((await db.query('select * from clientes')).rows.length,0)
+  assert.equal((await db.query('select * from pagos')).rows.length,0)
+  assert.equal((await db.query('select id from reservas')).rows[0].id,c.id)
+  await db.query(`update reservas set checkout='2027-01-19' where id=$1`,[c.id])
+  await assert.rejects(run(),/cierres cambiaron/)
+ }finally{await db.close()}
+})
+test('reserva directa conserva extremos y permite reemplazo total idempotente',async()=>{
+ for(const [entrada,salida,remaining] of [['2027-01-01','2027-01-08',1],['2027-01-12','2027-01-20',1],['2027-01-01','2027-01-20',0]]) {
+  const {db}=await base();try{
+   const {b,run}=await cierreDirecto(db)
+   const booking={...b,checkin:entrada,checkout:salida}
+   await run(booking);await run(booking)
+   assert.equal((await db.query("select * from reservas where estado='cerrada'")).rows.length,remaining)
+  }finally{await db.close()}
+ }
+})
+test('reserva directa nunca reemplaza cierres con datos, cierres manuales o reservas reales',async()=>{
+ const {db}=await base();try{
+  const {c,run}=await cierreDirecto(db)
+  for(const changes of ["precio_total=10","canal_origen='directo'","estado='confirmada'"]) {
+   await db.query(`update reservas set ${changes} where id=$1`,[c.id])
+   await assert.rejects(run(),/ocupadas|cierre cambio/)
+   await db.query("update reservas set precio_total=null,canal_origen='booking',estado='cerrada' where id=$1",[c.id])
+  }
+  await db.exec('set role anon')
+  await assert.rejects(run(),/permission denied/)
+ }finally{await db.close()}
+})
 test('confirmar sobre cierres conserva extremos, exige consentimiento y revierte todo ante error',async()=>{
  const {db,s}=await base();try{
   await acceso(db)

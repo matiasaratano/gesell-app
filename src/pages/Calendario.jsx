@@ -2231,7 +2231,7 @@ function ModalDetalle({ reserva: r, color, onClose, onActualizar }) {
 
         {/* Footer */}
         {r.estado === 'cerrada' && !editando && <div style={{ padding: '12px 20px' }}>
-          <Link style={{ ...s.btnWA, display: 'inline-flex', alignItems: 'center', minHeight: 44 }} to={`/admin?seccion=reservas&reserva_id=${r.id}&accion=asignar-inquilino`}>Asignar inquilino</Link>
+          <Link style={{ ...s.btnWA, display: 'inline-flex', alignItems: 'center', minHeight: 44 }} to={['booking','airbnb'].includes(r.canal_origen) ? `/nueva?cierre_id=${r.id}` : `/admin?seccion=reservas&reserva_id=${r.id}&accion=asignar-inquilino`}>{['booking','airbnb'].includes(r.canal_origen) ? 'Crear reserva dentro de este cierre' : 'Asignar inquilino'}</Link>
         </div>}
         {r.estado !== 'cerrada' && !editando && <div style={{ padding: '12px 20px' }}>
           <Link to={`/cobros?reserva_id=${r.id}`}>Ver señas y cobros</Link>

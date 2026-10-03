@@ -42,6 +42,16 @@ function match(row,u) {
    if(u.pathname.startsWith('/rest/v1/')) {
     const table=u.pathname.split('/').pop(),body=req.postDataJSON();
     if(table==='clientes' && u.searchParams.get('select')==='*' && req.method()==='GET') clientListReads++;
+    if(table==='crear_reserva_dentro_cierre') {
+     assert.equal(body.p_cierre_id,'cierre-prueba');
+     assert.equal(body.p_cierres.length,1);
+     assert.equal(body.p_reserva.canal_origen,'directo');
+     assert.equal(body.p_reserva.checkin,'2027-01-08');
+     assert.equal(body.p_reserva.checkout,'2027-01-12');
+     writes.push({table,method:req.method()});
+     rows.push({...body.p_reserva,clientes:clients[0],propiedades:properties[0]});
+     return route.fulfill({json:body.p_reserva.id});
+    }
     if(table==='eliminar_reserva_segura') {
      writes.push({table,method:req.method()});
      if(failDelete)return route.fulfill({status:400,json:{message:'Fallo simulado al eliminar',code:'P0001'}});
@@ -261,6 +271,34 @@ function match(row,u) {
    await page.getByRole('button',{name:'Reintentar panel',exact:true}).click();await page.getByRole('heading',{name:'Panel principal'}).waitFor();
    assert.equal(dialogs.length,0);assert.deepEqual(errors,[]);
   }
+  rows.push({id:'cierre-prueba',propiedad_id:'p1',canal_origen:'booking',estado:'cerrada',checkin:'2027-01-01',checkout:'2027-01-20',propiedades:properties[0],precio_total:null,cliente_id:null});
+  await page.goto(base+'/reservas/cierre-prueba');
+  await page.getByRole('link',{name:'Crear reserva dentro de este cierre',exact:true}).click();
+  await page.getByText(/Cierre de booking:/).waitFor();
+  assert.equal(await page.locator('select').first().isDisabled(),true);
+  const dateFields=page.locator('input[type="date"]');
+  await dateFields.nth(0).fill('2026-12-31');
+  await page.getByRole('button',{name:/Verificar disponibilidad/}).click();
+  await page.getByText('Elegí fechas dentro del cierre original.').waitFor();
+  await dateFields.nth(0).fill('2027-01-08');await dateFields.nth(1).fill('2027-01-12');
+  await page.evaluate(()=>window.scrollTo(0,0));
+  await page.screenshot({path:`${output}/${width}-reserva-dentro-cierre-fechas.png`,fullPage:true});
+  await page.getByRole('button',{name:/Verificar disponibilidad/}).click();
+  await page.getByPlaceholder('Nombre, apellido o DNI…').fill('Valeria');
+  await page.getByRole('button',{name:/Valeria Prueba.*DNI/}).click();
+  await page.getByRole('button',{name:/Continuar/}).click();
+  await page.getByPlaceholder('0',{exact:true}).fill('100000');
+  const countWrites=writes.length;
+  await page.getByRole('button',{name:/Crear reserva/}).click();
+  await page.getByText('Confirmá que los cierres son preventivos antes de guardar.').waitFor();
+  assert.equal(writes.length,countWrites);
+  await page.getByRole('checkbox',{name:/Verifiqué que son cierres preventivos/}).check();
+  await page.screenshot({path:`${output}/${width}-reserva-dentro-cierre-confirmar.png`,fullPage:true});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+  await page.getByRole('button',{name:/Crear reserva/}).click();
+  await page.waitForURL(/\/reservas\//);
+  assert.equal(writes.length,countWrites+1);
+  assert.deepEqual(errors,[]);
   console.log(JSON.stringify({width,errors,dialogs,mockedWrites:writes.length}));await context.close();
  }
  fs.writeFileSync(`${output}/results.json`,JSON.stringify(results,null,2));

@@ -6,6 +6,7 @@ import CobrosReserva from '../components/CobrosReserva'
 import { nombreCliente } from '../lib/cobros.js'
 import { hoyLocal, mensajeReserva } from '../lib/operacion-reserva.js'
 import { reservaDesdeCierre } from '../lib/calendario-grid.js'
+import { cierreImportadoDisponible } from '../lib/disponibilidad-solicitud.js'
 import { mesAnterior, sumarDias } from '../lib/mensualidades.js'
 import { useConfirmacion } from '../lib/confirmacion.js'
 
@@ -71,13 +72,16 @@ function FichaReserva() {
       if (r.error || p.error) { setError('No se pudo cargar la reserva y sus cobros.'); setLoading(false); return }
       setError(''); setReserva(r.data); setPagos(p.data || []); setRecordar(r.data.recordar_el || ''); setLoading(false)
       if (params.get('accion') === 'asignar-inquilino') {
+        if (cierreImportadoDisponible({ ...r.data, pagos: p.data || [] })) {
+          navigate(`/nueva?cierre_id=${r.data.id}`, { replace: true }); return
+        }
         setEditor(reservaDesdeCierre(r.data)); setParams({}, { replace: true })
       } else if (params.get('accion') === 'editar') {
         setEditor(r.data); setParams({}, { replace: true })
       }
     })
     return () => { active = false }
-  }, [id, revision, params, setParams])
+  }, [id, revision, params, setParams, navigate])
 
   useEffect(() => {
     let active = true
@@ -138,7 +142,9 @@ function FichaReserva() {
     <div className="cobros-acciones ficha-acciones"><button className="cobros-primary" onClick={() => setEditor(reserva)}>Editar reserva</button>
       {!cerrada && <Link className="cobros-link" to={`/recibos?reserva_id=${reserva.id}`}>Recibos de pagos</Link>}
       {plataforma && <a className="cobros-link" href={plataforma.url} target="_blank" rel="noopener noreferrer" title={`Abrir el panel de ${plataforma.nombre} en una pestaña nueva`}>Abrir {plataforma.nombre}</a>}
-      {cerrada && <button className="cobros-primary" onClick={() => setEditor(reservaDesdeCierre(reserva))}>Asignar inquilino</button>}
+      {cerrada && (cierreImportadoDisponible({ ...reserva, pagos })
+        ? <Link className="cobros-link" to={`/nueva?cierre_id=${reserva.id}`}>Crear reserva dentro de este cierre</Link>
+        : <button className="cobros-primary" onClick={() => setEditor(reservaDesdeCierre(reserva))}>Asignar inquilino</button>)}
       {cerrada && manual && <button onClick={() => setAbrir(true)}>Abrir cierre manual</button>}
       <button className="cobros-danger" disabled={guardando} onClick={eliminarReserva}>Eliminar reserva</button>
     </div>
