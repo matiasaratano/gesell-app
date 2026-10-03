@@ -3,6 +3,7 @@ import { supabase, supabaseAutomatico } from '../lib/supabase'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import CobrosReserva from '../components/CobrosReserva'
 import { useConfirmacion } from '../lib/confirmacion.js'
+import { avisoCapacidad } from '../lib/capacidad.js'
 import './admin-listas.css'
 
 const SECCIONES = [
@@ -358,7 +359,7 @@ export function CRUDReservas({ reservaInicial = null, onSaved, onCancel, onDelet
         .select('*, clientes(nombre, apellido, whatsapp), propiedades(id, nombre)')
         .order('checkin', { ascending: true })
         .limit(200),
-      supabase.from('propiedades').select('id, nombre').order('nombre'),
+      supabase.from('propiedades').select('id, nombre, capacidad_max').order('nombre'),
       supabase.from('clientes').select('id, nombre, apellido, dni').order('nombre')
     ])
     setLista(resRes.data ?? [])
@@ -387,6 +388,8 @@ export function CRUDReservas({ reservaInicial = null, onSaved, onCancel, onDelet
     if (!editando.propiedad_id) { showToast('Seleccioná una propiedad'); return }
     if (!editando.checkin || !editando.checkout) { showToast('Completá check-in y check-out'); return }
     if (editando.checkout <= editando.checkin) { showToast('El check-out debe ser posterior al check-in'); return }
+    const aviso = editando.estado !== 'cerrada' && avisoCapacidad(propiedades.find(p => p.id === editando.propiedad_id), editando)
+    if (aviso && !await confirmar(`${aviso} ¿Guardar igualmente como excepción?`)) return
 
     const reservasQuery = supabase
       .from('reservas')
@@ -641,6 +644,7 @@ export function CRUDReservas({ reservaInicial = null, onSaved, onCancel, onDelet
       </div>
 
       <Campo label="Notas internas" style={{ marginTop: 12 }}>
+        {editando.estado !== 'cerrada' && avisoCapacidad(propiedades.find(p => p.id === editando.propiedad_id), editando) && <p role="alert" className="cobros-aviso">{avisoCapacidad(propiedades.find(p => p.id === editando.propiedad_id), editando)}</p>}
         <textarea style={{ ...s.input, minHeight: 72, resize: 'vertical' }}
           value={editando.notas_internas ?? ''}
           onChange={e => setEditando(p => ({ ...p, notas_internas: e.target.value }))} />

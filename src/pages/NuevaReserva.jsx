@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import PagoFields from '../components/PagoFields'
+import { avisoCapacidad } from '../lib/capacidad.js'
+import { useConfirmacion } from '../lib/confirmacion.js'
 import { pagoVacio, datosPago } from '../lib/operacion-reserva.js'
 import '../components/cobros.css'
 
@@ -103,6 +105,8 @@ export default function NuevaReserva({ onExito }) {
   }, [])
 
   const propiedad    = propiedades.find(p => p.id === propId) ?? null
+  const confirmar = useConfirmacion()
+  const capacidadAviso = avisoCapacidad(propiedad, { adultos, menores })
   const noches       = diffNoches(checkin, checkout)
   const clienteLabel = modoCliente === 'seleccionado'
     ? `${clienteForm.nombre} ${clienteForm.apellido}`
@@ -114,6 +118,7 @@ export default function NuevaReserva({ onExito }) {
   async function verificarYAvanzar() {
     setDispError('')
     if (!propId)   return setDispError('Seleccioná una propiedad.')
+    if (!Number.isInteger(adultos) || adultos < 1 || !Number.isInteger(menores) || menores < 0) return setDispError('Ingresá al menos un adulto y una cantidad válida de menores, sin decimales.')
     if (!checkin)  return setDispError('Ingresá la fecha de check-in.')
     if (!checkout) return setDispError('Ingresá la fecha de check-out.')
     if (checkout <= checkin) return setDispError('El check-out debe ser posterior al check-in.')
@@ -243,6 +248,7 @@ export default function NuevaReserva({ onExito }) {
     setGuardando(true)
 
     try {
+      if (capacidadAviso && !await confirmar(`${capacidadAviso} ¿Guardar igualmente como excepción?`)) return
       const pago = conPago ? datosPago(primerPago, operacionRef.current.pago) : null
       const { data: nuevaId, error: errRes } = await supabase.rpc('crear_reserva_con_pago', {
         p_reserva: {
@@ -372,6 +378,11 @@ export default function NuevaReserva({ onExito }) {
           )}
 
           {dispError && <MensajeError texto={dispError} />}
+          <div style={s.row2}>
+            <Campo label="Adultos"><input aria-label="Adultos" type="number" min="1" style={s.input} value={adultos} onChange={e => setAdultos(Number(e.target.value))} /></Campo>
+            <Campo label="Menores"><input aria-label="Menores" type="number" min="0" style={s.input} value={menores} onChange={e => setMenores(Number(e.target.value))} /></Campo>
+          </div>
+          {capacidadAviso && <p role="alert" className="cobros-aviso">{capacidadAviso}</p>}
 
           <div style={s.footerBtns}>
             <button
@@ -520,6 +531,7 @@ export default function NuevaReserva({ onExito }) {
       {/* ── PASO 2: Confirmar ──────────────────────────────────────────────── */}
       {paso === 2 && (
         <Seccion titulo="Confirmar reserva">
+          {capacidadAviso && <p role="alert" className="cobros-aviso">{capacidadAviso}</p>}
 
           {/* Resumen */}
           <div style={s.resumen}>

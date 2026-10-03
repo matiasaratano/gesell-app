@@ -83,6 +83,15 @@ function match(row,u) {
    const dimensions=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,overflow:[...document.querySelectorAll('body *')].filter(e=>e.getBoundingClientRect().right>innerWidth+1&&getComputedStyle(e).position!=='fixed').slice(0,8).map(e=>({tag:e.tagName,class:e.className,text:e.textContent.slice(0,60)}))}));
    await page.screenshot({path:`${output}/${width}-${name}.png`,fullPage:true});
    results.push({width,route,...dimensions,errors:errors.slice(start)});
+   if(route==='/nueva') {
+    await page.locator('select').first().selectOption('p1');
+    await page.getByRole('spinbutton',{name:'Adultos',exact:true}).fill('2');
+    await page.getByRole('spinbutton',{name:'Menores',exact:true}).fill('3');
+    assert.match(await page.getByRole('alert').innerText(),/admite hasta 4 personas y estás cargando 5/);
+    await page.screenshot({path:`${output}/${width}-capacidad.png`,fullPage:true});
+    await page.getByRole('spinbutton',{name:'Menores',exact:true}).fill('0');
+    assert.equal(await page.getByRole('alert').count(),0);
+   }
    if(route==='/nueva' || route==='/mensajes') {
     const checkDates=async()=>{
      const inputs=page.locator('input[type="date"]');

@@ -5,6 +5,8 @@ import { dinero, parseImporte } from '../lib/cobros.js'
 import { hoyLocal, datosPago, pagoVacio } from '../lib/operacion-reserva.js'
 import { detalleSolicitud, voucherSolicitud, fechaSolicitud, solicitudLista, vistaSolicitud } from '../lib/solicitudes.js'
 import { revisarDisponibilidadSolicitud } from '../lib/disponibilidad-solicitud.js'
+import { avisoCapacidad } from '../lib/capacidad.js'
+import { useConfirmacion } from '../lib/confirmacion.js'
 import '../components/cobros.css'
 import './solicitudes.css'
 
@@ -20,6 +22,7 @@ async function filas(tabla, orden) {
 }
 
 export default function Solicitudes() {
+  const confirmar = useConfirmacion()
   const [rows, setRows] = useState([]), [props, setProps] = useState([]), [clientes, setClientes] = useState([])
   const [loading, setLoading] = useState(true), [error, setError] = useState(''), [mensaje, setMensaje] = useState('')
   const [tab, setTab] = useState('abierta'), [busqueda, setBusqueda] = useState(''), [editor, setEditor] = useState(null)
@@ -89,6 +92,8 @@ export default function Solicitudes() {
       if (!solicitudLista(s)) throw new Error('Asigná un departamento y un precio antes de preparar la seña.')
       const cierres = await revisarDisponibilidadSolicitud(supabase, s)
       const propiedad = props.find(p => p.id === s.propiedad_id)
+      const aviso = avisoCapacidad(propiedad, s)
+      if (aviso && !await confirmar(`${aviso} ¿Preparar la seña igualmente como excepción?`)) return null
       if (!propiedad?.alias_cbu) throw new Error('Completá el alias de cobro del alojamiento en Admin antes de preparar el detalle.')
       if (cierres.length) { setCierresSeña({ s, cierres, texto: detalleSolicitud(s, propiedad), propiedad }); return null }
       return detalleSolicitud(s, propiedad)
@@ -124,7 +129,9 @@ export default function Solicitudes() {
     {bloqueo && <Dialog titulo="No se puede solicitar la seña" cerrar={()=>setBloqueo(null)}><p role="alert">{bloqueo.mensaje}</p><div className="cobros-acciones"><button className="cobros-primary" onClick={()=>{const s=rows.find(s=>s.id===bloqueo.id);if(s)setEditor(structuredClone(s));setBloqueo(null)}}>Revisar solicitud</button><button onClick={()=>setBloqueo(null)}>Cerrar</button></div></Dialog>}
     {cierresSeña && <Dialog titulo="Fechas cerradas en la plataforma" cerrar={()=>setCierresSeña(null)}><p><strong>{cierresSeña.propiedad.nombre}</strong> · {fechaSolicitud(cierresSeña.s.checkin)} → {fechaSolicitud(cierresSeña.s.checkout)}</p><DetalleCierres cierres={cierresSeña.cierres} /><p>Podés preparar una reserva directa si estos cierres son preventivos. Las fechas no cambian hasta que confirmes el pago. Booking y Airbnb seguirán bajo tu gestión manual.</p><div className="cobros-acciones"><button className="cobros-primary" onClick={()=>{setTexto(cierresSeña.texto);setCierresSeña(null)}}>Preparar seña sobre estos cierres</button><button onClick={()=>setCierresSeña(null)}>Cancelar</button></div></Dialog>}
     {editor && <Dialog titulo={editor.updated_at ? 'Datos de la solicitud' : 'Nueva solicitud'} cerrar={()=>!busy && setEditor(null)}>
-      <form onSubmit={guardar}><div className="pago-fields">
+      <form onSubmit={guardar}>
+        {avisoCapacidad(props.find(p => p.id === editor.propiedad_id), editor) && <p role="alert" className="cobros-aviso">{avisoCapacidad(props.find(p => p.id === editor.propiedad_id), editor)}</p>}
+        <div className="pago-fields">
         <label>Departamento<select aria-label="Departamento" required value={editor.propiedad_id || ''} onChange={e=>setEditor({...editor,propiedad_id:e.target.value})}><option value="">Elegir</option>{props.filter(p=>p.activa!==false || p.id===editor.propiedad_id).map(p=><option key={p.id} value={p.id}>{p.nombre}</option>)}</select></label>
         <label>Precio total<input required inputMode="decimal" value={editor.precio_total ?? ''} onChange={e=>setEditor({...editor,precio_total:e.target.value})} /></label>
         {['checkin','checkout'].map(k=><label key={k}>{k==='checkin'?'Ingreso':'Salida'}<input required type="date" value={editor[k]} onChange={e=>setEditor({...editor,[k]:e.target.value})} /></label>)}
@@ -144,6 +151,7 @@ function Dialog({ titulo, cerrar, children }) {
   return <dialog ref={ref} className="cobros solicitudes-dialog" aria-label={titulo} onCancel={e=>{e.preventDefault();cerrar()}}><h2>{titulo}</h2>{children}</dialog>
 }
 function Confirmar({s,cerrar,onSaved}) {
+  const confirmar = useConfirmacion()
   const [pago,setPago]=useState(()=>({...pagoVacio(),monto:String(Math.round(Number(s.precio_total)*30)/100)}))
   const [error,setError]=useState(''),[busy,setBusy]=useState(false)
   const [cierres,setCierres]=useState(null),[autoriza,setAutoriza]=useState(false)
@@ -155,6 +163,10 @@ function Confirmar({s,cerrar,onSaved}) {
       const vigente=await supabase.from('solicitudes').select('estado,reserva_id').eq('id',s.id).single()
       if (vigente.error) throw new Error('No se pudo verificar la solicitud. Reintentá antes de registrar el pago.')
       if (vigente.data?.estado==='confirmada' && vigente.data.reserva_id) { await onSaved(vigente.data.reserva_id);return }
+      const alojamiento = await supabase.from('propiedades').select('nombre, capacidad_max').eq('id',s.propiedad_id).single()
+      if (alojamiento.error || !alojamiento.data) throw new Error('No se pudo verificar la capacidad del alojamiento. Reintentá.')
+      const aviso = avisoCapacidad(alojamiento.data, s)
+      if (aviso && !await confirmar(`${aviso} ¿Confirmar la reserva igualmente como excepción?`)) return
       const actuales=await revisarDisponibilidadSolicitud(supabase,s)
       if (actuales.length && (!autoriza || JSON.stringify(actuales)!==JSON.stringify(cierres))) {
         setCierres(actuales);setAutoriza(false);return
