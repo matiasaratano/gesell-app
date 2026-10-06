@@ -271,6 +271,16 @@ function match(row,u) {
    await page.getByRole('button',{name:'Reintentar panel',exact:true}).click();await page.getByRole('heading',{name:'Panel principal'}).waitFor();
    assert.equal(dialogs.length,0);assert.deepEqual(errors,[]);
   }
+  rows.push({id:'cierre-con-cliente',propiedad_id:'p1',canal_origen:'booking',estado:'cerrada',checkin:'2027-02-01',checkout:'2027-02-03',propiedades:properties[0],precio_total:null,cliente_id:'c1',clientes:clients[0],adultos:1,menores:0});
+  await page.goto(base+'/reservas/cierre-con-cliente');
+  await page.getByRole('button',{name:'Asignar inquilino',exact:true}).click();
+  await page.getByRole('button',{name:'✓ Guardar',exact:true}).click();
+  await page.getByRole('heading',{name:'Valeria Prueba',exact:true}).waitFor();
+  const converted=rows.find(r=>r.id==='cierre-con-cliente');
+  assert.equal(converted.estado,'confirmada');assert.equal(converted.canal_origen,'directo');
+  assert.equal(converted.cliente_id,'c1');assert.equal(converted.checkin,'2027-02-01');
+  assert.equal(converted.checkout,'2027-02-03');
+  assert.deepEqual(errors,[]);
   rows.push({id:'cierre-prueba',propiedad_id:'p1',canal_origen:'booking',estado:'cerrada',checkin:'2027-01-01',checkout:'2027-01-20',propiedades:properties[0],precio_total:null,cliente_id:null});
   await page.goto(base+'/reservas/cierre-prueba');
   await page.getByRole('link',{name:'Crear reserva dentro de este cierre',exact:true}).click();

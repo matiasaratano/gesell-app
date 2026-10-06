@@ -338,7 +338,7 @@ export function CRUDReservas({ reservaInicial = null, onSaved, onCancel, onDelet
     setBusquedaCli(`${clienteCreado.nombre} ${clienteCreado.apellido || ''}`.trim())
     setMostrarDropdownCli(false)
     setCreandoCliModal(false)
-    showToast('✓ Cliente creado y asignado')
+    showToast('✓ Cliente creado. Guardá la reserva para confirmar la asignación.')
   }
 
   async function cargar() {
@@ -427,7 +427,8 @@ export function CRUDReservas({ reservaInicial = null, onSaved, onCancel, onDelet
     }
 
     setGuardando(true)
-    const { clientes, propiedades, created_at, noches, ...camposRaw } = editando
+    const camposRaw = Object.fromEntries(Object.entries(editando)
+      .filter(([key]) => !['clientes', 'propiedades', 'pagos', 'created_at', 'noches'].includes(key)))
     const campos = {
       ...camposRaw,
       canal_origen: camposRaw.canal_origen === 'manual' ? 'directo' : camposRaw.canal_origen,
@@ -719,7 +720,7 @@ export function CRUDReservas({ reservaInicial = null, onSaved, onCancel, onDelet
                   Cancelar
                 </button>
                 <button type="submit" style={s.btnPrimario} disabled={guardandoCliRapido}>
-                  {guardandoCliRapido ? 'Guardando…' : '✓ Guardar y asignar'}
+                  {guardandoCliRapido ? 'Guardando…' : '✓ Crear y seleccionar cliente'}
                 </button>
               </div>
             </form>

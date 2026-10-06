@@ -932,6 +932,10 @@ export default function Calendario() {
       )}
 
       {/* Grid del calendario / Timeline */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#6B7280', marginBottom: 12 }}>
+        <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: 2, background: '#9CA3AF' }} />
+        Cierres / no disponible
+      </div>
       {error ? null : loading ? <div role="status" style={{ padding: '32px 16px', textAlign: 'center', color: '#555' }}>Cargando fechas…</div> : vista === 'timeline' ? (
         <TimelineView
           orientacion={orientacion}
@@ -1065,7 +1069,7 @@ export default function Calendario() {
                             width: 8,
                             height: 8,
                             borderRadius: '50%',
-                            background: esReservaPasada(r) ? '#6B7280' : propColor(r.propiedad_id),
+                            background: r.estado === 'cerrada' ? '#9CA3AF' : esReservaPasada(r) ? '#6B7280' : propColor(r.propiedad_id),
                             border: 'none',
                             padding: 0,
                             cursor: 'pointer',
@@ -1097,7 +1101,8 @@ export default function Calendario() {
                           }}
                           style={{
                             ...s.bar,
-                            background: esReservaPasada(r) ? '#6B7280' : propColor(r.propiedad_id),
+                            background: r.estado === 'cerrada' ? '#D1D5DB' : esReservaPasada(r) ? '#6B7280' : propColor(r.propiedad_id),
+                            color: r.estado === 'cerrada' ? '#374151' : '#ffffff',
                             fontSize: isTablet ? 9.5 : 11,
                             padding: isTablet ? '1px 4px' : '2px 6px',
                             opacity: esReservaPasada(r) ? 0.72 : 1,
@@ -1853,10 +1858,10 @@ function TimelineView({
                         gridRowEnd: vertical ? endCol : rowGridIndex + 1,
                         margin: vertical ? '2px 4px' : '5px 1px',
                         padding: '4px 8px',
-                        background: esReservaPasada(r) ? '#6B7280' : propColor(r.propiedad_id),
+                        background: r.estado === 'cerrada' ? '#D1D5DB' : esReservaPasada(r) ? '#6B7280' : propColor(r.propiedad_id),
                         border: 'none',
                         borderRadius: 6,
-                        color: '#ffffff',
+                        color: r.estado === 'cerrada' ? '#374151' : '#ffffff',
                         fontSize: 10,
                         fontWeight: 600,
                         cursor: 'pointer',
@@ -2422,7 +2427,7 @@ function ModalDiaReservas({ dia, onClose, onVerDetalle, propColor }) {
                 width: 12,
                 height: 12,
                 borderRadius: 3,
-                background: propColor(r.propiedad_id),
+                background: r.estado === 'cerrada' ? '#9CA3AF' : propColor(r.propiedad_id),
                 flexShrink: 0,
               }} />
               <div style={{ flex: 1, minWidth: 0 }}>
