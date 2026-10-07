@@ -1,17 +1,12 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { detalleSolicitud, voucherSolicitud, datosVoucherReserva, fechaSolicitud } from '../lib/solicitudes.js'
+import { detalleSolicitud, voucherSolicitud, datosVoucherReserva, fechaSolicitud, rangoFechas } from '../lib/solicitudes.js'
 
 const voucherVacio = () => ({titular:'',checkin:'',checkout:'',adultos:'2',menores:'0',total:'',pagado:'',verificado:false})
 
 // ─── Utilidades ───────────────────────────────────────────────────────────────
-const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre']
-
-function fmtFecha(str) {
-  if (!str) return '[fecha]'
-  const [y, m, d] = str.split('-')
-  return `${parseInt(d)} de ${MESES[parseInt(m) - 1]} de ${y}`
-}
+const SENA = 0.3
+const WEB = 'https://www.departamentosnorte.com.ar'
 
 function fmt(n) {
   return '$' + Number(n).toLocaleString('es-AR')
@@ -24,71 +19,68 @@ function calcNoches(desde, hasta) {
   return Math.max(0, Math.round((new Date(y2, m2 - 1, d2) - new Date(y1, m1 - 1, d1)) / 86400000))
 }
 
-const SEP = '━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'
+// null = línea omitida · '' = renglón en blanco
+const armar = lineas => lineas.filter(l => l !== null).join('\n')
+
+// Acepta el campo "equipamiento" con o sin viñetas (*, -, •) y lo devuelve como lista limpia
+const listaEquipamiento = txt => (txt || '').split('\n').map(l => l.replace(/^\s*[*•\-–]\s*/, '').trim()).filter(Boolean)
+
+const sinTildes = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
 
 // ─── Generadores de texto ─────────────────────────────────────────────────────
 function genCotizacion(p, { cotDesde, cotHasta, cotPxn, cotPersonas }) {
-  const n     = calcNoches(cotDesde, cotHasta)
-  const pxn   = Number(cotPxn || 0)
-  const total = n * pxn
-  const sena  = Math.round(total * 0.3)
-  const esDN  = !p.marca
-  const firmaWeb = esDP(esDN)
+  const n       = calcNoches(cotDesde, cotHasta)
+  const total   = n * Number(cotPxn || 0)
+  const sena    = Math.round(total * SENA)
+  const capac   = p.capacidad_desc || (p.capacidad_max ? `hasta ${p.capacidad_max} personas` : '')
+  const equipo  = listaEquipamiento(p.equipamiento)
+  // Fotos si hay; si no, la web (solo para Departamentos Norte)
+  const enlace  = p.link_web ? `Fotos: ${p.link_web}` : (!p.marca ? `Web: ${WEB}` : null)
 
-  const distSec = p.distribucion ? '\nDistribución:\n' + p.distribucion + '\n' : ''
-  const webSec  = p.link_web ? '\nVer fotos: ' + p.link_web + '\n' : ''
-
-  return 'Hola!\n'
-    + 'Te paso la información del ' + p.nombre + ':\n\n'
-    + SEP + 'DEPARTAMENTO\n' + SEP
-    + 'Dirección: ' + (p.ubicacion || p.direccion || '') + '\n'
-    + 'Capacidad: ' + (p.capacidad_desc || `hasta ${p.capacidad_max || '?'} personas`) + '\n'
-    + distSec
-    + '\nEquipamiento:\n' + (p.equipamiento || '') + '\n'
-    + webSec
-    + '\n' + SEP + 'COTIZACIÓN\n' + SEP
-    + (cotDesde ? `  • Fechas: ${fmtFecha(cotDesde)} al ${fmtFecha(cotHasta)}\n` : '')
-    + (cotPersonas ? `  • Personas: ${cotPersonas}\n` : '')
-    + (n > 0 ? `  • Noches: ${n}\n` : '')
-    + (pxn > 0 ? `  • Precio por noche: ${fmt(pxn)}\n` : '')
-    + (total > 0
-      ? `  • Total: ${fmt(total)}\n  • Seña para confirmar (30%): ${fmt(sena)}\n  • Saldo al ingresar: ${fmt(total - sena)}\n`
-      : '')
-    + '\nSi estás interesado/a, te mando el formulario para completar y continuar con la reserva.\n\n'
-    + 'Cualquier consulta, quedo a disposición.\n\n'
-    + 'Saludos,\nMatías\n📞 +54 9 2255-536640' + firmaWeb
+  return armar([
+    `Hola! Te paso la información del ${p.nombre}:`,
+    '',
+    `*Fechas:* ${rangoFechas(cotDesde, cotHasta)} (${n} ${n === 1 ? 'noche' : 'noches'})`,
+    cotPersonas ? `*Personas:* ${cotPersonas}` : null,
+    `*Total:* ${fmt(total)}`,
+    `*Seña para reservar (30%):* ${fmt(sena)}`,
+    `*Saldo al ingresar:* ${fmt(total - sena)}`,
+    '',
+    `*El departamento:*${capac ? ' ' + capac : ''}`,
+    ...equipo.map(e => `• ${e}`),
+    enlace,
+    '',
+    '*Condiciones:*',
+    '• Solo familias',
+    '• No incluye ropa blanca (sábanas ni toallas)',
+    '• No se permiten fiestas ni eventos',
+    p.restriccion_vehiculos ? '• No se puede ingresar con vehículos al predio (motos, cuatriciclos, etc.)' : null,
+    '',
+    'Si te interesa, te paso la ficha para avanzar con la reserva.',
+    'Saludos, Matías',
+  ])
 }
 
 function genFicha(p) {
-  const acomp     = p.acompanantes ?? Math.max(1, (p.capacidad_max ?? 2) - 1)
-  const label     = acomp === 1 ? 'Acompañante' : 'Acompañantes'
-  const lines     = Array.from({ length: acomp }, (_, i) => `  ${i + 1}.\n`).join('')
-  const vehiculo  = p.restriccion_vehiculos ? '  • Vehículos: No está permitido ingresar vehículos (motos, cuatriciclos, etc.) al predio.\n' : ''
-  const intro     = p.intro_personalizado ?? 'Gracias por tu interés en Departamentos Norte. A continuación te envío los datos para continuar con tu solicitud:'
-  const esPN      = !p.marca
-  const firmaWeb  = esDP(esPN)
-  // const webSec   = p.link_web ? 'Ver fotos: ' + p.link_web + '\n' : ''
+  const acomp  = p.acompanantes ?? Math.max(1, (p.capacidad_max ?? 2) - 1)
+  const label  = acomp === 1 ? 'Acompañante' : 'Acompañantes'
+  const intro  = p.intro_personalizado ?? 'Perfecto. Para avanzar, necesito estos datos:'
 
-  return `Asunto: Solicitud de reserva (sin confirmar) – ${p.nombre}\n\n${intro}\n\n`
-    + SEP + 'POLÍTICAS DE PAGO\n' + SEP
-    + '  • Método de pago:\n'
-    + '  • Seña: 30% del total. Transferencia bancaria.\n'
-    + '  • Saldo restante: 70% en efectivo o transferencia al ingresar.\n'
-    + '  • Una vez recibida la ficha, revisamos disponibilidad y te enviamos el detalle para pagar. Completarla no bloquea fechas.\n'
-    + '  • La reserva se confirma al verificar el pago.\n\n'
-    + SEP + 'FORMULARIO DE INSCRIPCIÓN\n' + SEP
-    + 'Por favor, completá los datos y envíalos por WhatsApp al +54 9 2255-536640:\n\n'
-    + 'Datos del titular:\n'
-    + '  • Nombre y apellido:\n  • DNI:\n  • Dirección:\n  • Localidad:\n  • Teléfono celular:\n  • Correo electrónico:\n\n'
-    + `${label} (Nombre, Apellido y DNI):\n${lines}\n`
-    + SEP + 'POLÍTICAS ADICIONALES\n' + SEP
-    + '  • Solo familias: No se aceptan grupos de jóvenes.\n'
-    + '  • Ropa blanca: No se incluyen sábanas ni toallas.\n'
-    + '  • No se permiten fiestas ni eventos.\n'
-    + vehiculo
-    // + webSec
-    + '\nCualquier duda o consulta, quedo a tu disposición.\n\n'
-    + 'Saludos cordiales,\nMatías\n📞 +54 9 2255-536640' + firmaWeb
+  return armar([
+    intro,
+    '',
+    '*Titular*',
+    'Nombre y apellido:',
+    'DNI:',
+    'Teléfono:',
+    'Email:',
+    'Domicilio y localidad:',
+    '',
+    `*${label} (nombre, apellido y DNI)*`,
+    ...Array.from({ length: acomp }, (_, i) => `${i + 1}.`),
+    '',
+    'Completar la ficha no confirma la reserva ni bloquea las fechas. Una vez que la reciba, reviso la disponibilidad y te envío los datos para abonar la seña.',
+  ])
 }
 
 function genDetalle(p, { detCheckin, detCheckout, detTotal }) {
@@ -97,24 +89,46 @@ function genDetalle(p, { detCheckin, detCheckout, detTotal }) {
 
 function genNoDisponible(p, { ndDesde, ndHasta }) {
   const fechas = (ndDesde && ndHasta)
-    ? `del ${fmtFecha(ndDesde)} al ${fmtFecha(ndHasta)}`
+    ? `del ${rangoFechas(ndDesde, ndHasta)}`
     : 'para las fechas consultadas'
-  const fw = esDP(!p.marca)
 
-  return `Hola!\n\nGracias por tu consulta.\n\n`
-    + `Lamentablemente el ${p.nombre} no tiene disponibilidad ${fechas}.\n\n`
-    + '¿Tenés flexibilidad? Con gusto te consulto disponibilidad para otra fecha.\n\n'
-    + 'Saludos,\nMatías\n📞 +54 9 2255-536640' + fw
+  return armar([
+    'Hola! Gracias por la consulta.',
+    '',
+    `Lamentablemente el ${p.nombre} no tiene disponibilidad ${fechas}.`,
+    '',
+    '¿Tenés flexibilidad con las fechas? Si querés, consulto otras.',
+    'Saludos, Matías',
+  ])
 }
 
 function genDerivacion() {
   const textoWA = 'Hola! Quiero consultar disponibilidad:\n- Cantidad de personas:\n- Fecha desde:\n- Fecha hasta:'
   const link = 'https://wa.me/5492255536640?text=' + encodeURIComponent(textoWA)
-  return { texto: `Hola! Gracias por contactarte con Departamentos Norte 😊\n\nPara consultar disponibilidad, tarifas y recibir una respuesta más rápida, escribinos por WhatsApp:\n\n📲 ${link}\n\nO bien guardá el número +54 9 2255-536640 y escribime directamente.\n\nTe esperamos!\n`, link }
+  return { texto: `Hola! Gracias por contactarte con Departamentos Norte 😊\n\nPara consultar disponibilidad y tarifas, escribinos por WhatsApp:\n\n📲 ${link}\n\nTambién podés guardar el número +54 9 2255-536640 y escribirme directamente.\n\n¡Te esperamos!\n`, link }
 }
 
-function esDP(bool) {
-  return bool ? '\n🌐 https://www.departamentosnorte.com.ar' : ''
+// ─── Voucher: campos y validación ─────────────────────────────────────────────
+const CAMPOS_VOUCHER = [
+  { key: 'titular',  label: 'Titular',             type: 'text' },
+  { key: 'checkin',  label: 'Ingreso',             type: 'date' },
+  { key: 'checkout', label: 'Salida',              type: 'date' },
+  { key: 'adultos',  label: 'Adultos',             type: 'number', min: 1,    step: 1 },
+  { key: 'menores',  label: 'Menores',             type: 'number', min: 0,    step: 1 },
+  { key: 'total',    label: 'Precio total ($)',    type: 'number', min: 0.01, step: 0.01 },
+  { key: 'pagado',   label: 'Pagos recibidos ($)', type: 'number', min: 0.01, step: 0.01 },
+]
+
+function problemasVoucher(v) {
+  const total = Number(v.total)
+  const pagado = Number(v.pagado)
+  const problemas = []
+  if (!v.titular.trim()) problemas.push('titular')
+  if (!v.checkin || !v.checkout || calcNoches(v.checkin, v.checkout) <= 0) problemas.push('fechas válidas')
+  if (!Number.isFinite(total) || total <= 0) problemas.push('precio total')
+  if (!Number.isFinite(pagado) || pagado <= 0 || pagado > total) problemas.push('pago recibido válido')
+  if (!Number.isInteger(Number(v.adultos)) || Number(v.adultos) < 1 || !Number.isInteger(Number(v.menores)) || Number(v.menores) < 0) problemas.push('cantidad de huéspedes')
+  return problemas
 }
 
 // ─── Componente ───────────────────────────────────────────────────────────────
@@ -136,53 +150,89 @@ export default function GeneradorMensajes() {
   const [detCheckin, setDetCheckin] = useState('')
   const [detCheckout,setDetCheckout]= useState('')
   const [detTotal,   setDetTotal]   = useState('')
-  const [voucher, setVoucher] = useState(voucherVacio)
-  const [origenVoucher,setOrigenVoucher] = useState('manual')
-  const [clientesVoucher,setClientesVoucher] = useState([]), [reservasVoucher,setReservasVoucher] = useState([])
-  const [seleccionVoucher,setSeleccionVoucher] = useState(''), [busquedaVoucher,setBusquedaVoucher] = useState('')
-  const [cargandoVoucher,setCargandoVoucher] = useState(false), [errorVoucher,setErrorVoucher] = useState('')
-  const [reintentoVoucher,setReintentoVoucher] = useState(0)
-  const [incluirSinReservas,setIncluirSinReservas] = useState(false)
-  function cambiarVoucher(key,value) { setVoucher(v=>({...v,[key]:value}));setResultado('') }
 
-  useEffect(()=>{
-    if(tab!=='voucher' || origenVoucher==='manual')return
-    let activo=true
+  // Voucher
+  const [voucher,            setVoucher]            = useState(voucherVacio)
+  const [origenVoucher,      setOrigenVoucher]      = useState('manual')
+  const [clientesVoucher,    setClientesVoucher]    = useState([])
+  const [reservasVoucher,    setReservasVoucher]    = useState([])
+  const [seleccionVoucher,   setSeleccionVoucher]   = useState('')
+  const [busquedaVoucher,    setBusquedaVoucher]    = useState('')
+  const [cargandoVoucher,    setCargandoVoucher]    = useState(false)
+  const [errorVoucher,       setErrorVoucher]       = useState('')
+  const [reintentoVoucher,   setReintentoVoucher]   = useState(0)
+  const [incluirSinReservas, setIncluirSinReservas] = useState(false)
+
+  function cambiarVoucher(key, value) { setVoucher(v => ({ ...v, [key]: value })); setResultado('') }
+
+  useEffect(() => {
+    if (tab !== 'voucher' || origenVoucher === 'manual') return
+    let activo = true
     async function cargar() {
-      setCargandoVoucher(true);setErrorVoucher('')
+      setCargandoVoucher(true); setErrorVoucher('')
       try {
-        const rows=[]
-        for(let offset=0;;offset+=500) {
-          let query=origenVoucher==='cliente'
+        const rows = []
+        for (let offset = 0; ; offset += 500) {
+          const query = origenVoucher === 'cliente'
             ? supabase.from('clientes').select('id,nombre,apellido,reservas(id,estado)').order('apellido').order('nombre').order('id')
-            : supabase.from('reservas').select('id,propiedad_id,checkin,checkout,adultos,menores,precio_total,estado,clientes(nombre,apellido),propiedades(*),pagos(monto,confirmado)').in('estado',['confirmada','finalizada']).order('checkin',{ascending:false}).order('id')
-          const {data,error}=await query.range(offset,offset+499)
-          if(error)throw error
+            : supabase.from('reservas').select('id,propiedad_id,checkin,checkout,adultos,menores,precio_total,estado,clientes(nombre,apellido),propiedades(*),pagos(monto,confirmado)').in('estado', ['confirmada', 'finalizada']).order('checkin', { ascending: false }).order('id')
+          const { data, error } = await query.range(offset, offset + 499)
+          if (error) throw error
           rows.push(...data)
-          if(data.length<500)break
+          if (data.length < 500) break
         }
-        if(activo) { if(origenVoucher==='cliente')setClientesVoucher(rows.filter(c=>incluirSinReservas || c.reservas?.some(r=>!['cancelada','cerrada'].includes(r.estado))).sort((a,b)=>`${a.apellido || ''} ${a.nombre || ''}`.trim().localeCompare(`${b.apellido || ''} ${b.nombre || ''}`.trim(),'es',{sensitivity:'base'})));else setReservasVoucher(rows) }
-      } catch { if(activo)setErrorVoucher('No se pudieron cargar los datos. Reintentá o usá la carga manual.') }
-      finally { if(activo)setCargandoVoucher(false) }
+        if (!activo) return
+        if (origenVoucher === 'cliente') {
+          const nombreCompleto = c => `${c.apellido || ''} ${c.nombre || ''}`.trim()
+          setClientesVoucher(
+            rows
+              .filter(c => incluirSinReservas || c.reservas?.some(r => !['cancelada', 'cerrada'].includes(r.estado)))
+              .sort((a, b) => nombreCompleto(a).localeCompare(nombreCompleto(b), 'es', { sensitivity: 'base' }))
+          )
+        } else {
+          setReservasVoucher(rows)
+        }
+      } catch {
+        if (activo) setErrorVoucher('No se pudieron cargar los datos. Reintentá o usá la carga manual.')
+      } finally {
+        if (activo) setCargandoVoucher(false)
+      }
     }
     cargar()
-    return ()=>{activo=false}
-  },[tab,origenVoucher,reintentoVoucher,incluirSinReservas])
+    return () => { activo = false }
+  }, [tab, origenVoucher, reintentoVoucher, incluirSinReservas])
 
-  function elegirOrigen(value) { setOrigenVoucher(value);setSeleccionVoucher('');setBusquedaVoucher('');setVoucher(voucherVacio());setResultado('');setErrorVoucher('') }
+  function elegirOrigen(value) {
+    setOrigenVoucher(value); setSeleccionVoucher(''); setBusquedaVoucher('')
+    setVoucher(voucherVacio()); setResultado(''); setErrorVoucher('')
+  }
+
   function elegirVoucher(value) {
-    setSeleccionVoucher(value);setResultado('')
-    if(!value) { setVoucher(voucherVacio());return }
-    if(origenVoucher==='cliente') {
-      const cliente=clientesVoucher.find(c=>c.id===value)
-      setVoucher({...voucherVacio(),titular:[cliente?.nombre,cliente?.apellido].filter(Boolean).join(' ')})
+    setSeleccionVoucher(value); setResultado('')
+    if (!value) { setVoucher(voucherVacio()); return }
+    if (origenVoucher === 'cliente') {
+      const cliente = clientesVoucher.find(c => c.id === value)
+      setVoucher({ ...voucherVacio(), titular: [cliente?.nombre, cliente?.apellido].filter(Boolean).join(' ') })
     } else {
-      const reserva=reservasVoucher.find(r=>r.id===value)
-      if(!reserva)return
-      setVoucher(datosVoucherReserva(reserva));setPropId(reserva.propiedad_id)
-      if(reserva.propiedades)setProps(ps=>ps.some(p=>p.id===reserva.propiedad_id)?ps:[...ps,{...reserva.propiedades,id:reserva.propiedad_id}])
+      const reserva = reservasVoucher.find(r => r.id === value)
+      if (!reserva) return
+      setVoucher(datosVoucherReserva(reserva)); setPropId(reserva.propiedad_id)
+      if (reserva.propiedades) setProps(ps => ps.some(p => p.id === reserva.propiedad_id) ? ps : [...ps, { ...reserva.propiedades, id: reserva.propiedad_id }])
     }
   }
+
+  // Opciones del selector de cliente/reserva, filtradas por la búsqueda (sin distinguir tildes)
+  const opcionesVoucher = (origenVoucher === 'cliente' ? clientesVoucher : reservasVoucher)
+    .map(item => ({
+      id: item.id,
+      label: origenVoucher === 'cliente'
+        ? [item.nombre, item.apellido].filter(Boolean).join(' ')
+        : `${[item.clientes?.nombre, item.clientes?.apellido].filter(Boolean).join(' ') || 'Sin cliente'} · ${item.propiedades?.nombre || 'Departamento'} · ${fechaSolicitud(item.checkin)} → ${fechaSolicitud(item.checkout)}`,
+    }))
+    .filter(item => item.id === seleccionVoucher || sinTildes(item.label).includes(sinTildes(busquedaVoucher)))
+
+  // En modo "reserva existente" el departamento queda fijo: el voucher tiene que coincidir con la reserva
+  const deptoBloqueado = tab === 'voucher' && origenVoucher === 'reserva' && !!seleccionVoucher
 
   // No disponible
   const [ndDesde, setNdDesde] = useState('')
@@ -201,12 +251,12 @@ export default function GeneradorMensajes() {
   // Resumen cotización
   const cotN     = calcNoches(cotDesde, cotHasta)
   const cotTotal = cotN * Number(cotPxn || 0)
-  const cotSena  = Math.round(cotTotal * 0.3)
+  const cotSena  = Math.round(cotTotal * SENA)
 
   // Resumen detalle
   const detN     = calcNoches(detCheckin, detCheckout)
   const detTot   = Number(detTotal || 0)
-  const detSena  = Math.round(detTot * 0.3)
+  const detSena  = Math.round(detTot * SENA)
   const detSaldo = detTot - detSena
 
   function showToast(msg) {
@@ -232,14 +282,13 @@ export default function GeneradorMensajes() {
       showToast('Completá fechas válidas y un precio total mayor a cero.'); return
     }
     if (tab === 'detalle' && !propiedad.alias_cbu) { showToast('Completá el alias de cobro del departamento en Admin.'); return }
-    if (tab === 'voucher' && (!voucher.titular.trim() || !voucher.checkin || !voucher.checkout || calcNoches(voucher.checkin,voucher.checkout)<=0 || !Number.isFinite(Number(voucher.total)) || Number(voucher.total)<=0 || !Number.isFinite(Number(voucher.pagado)) || Number(voucher.pagado)<=0 || Number(voucher.pagado)>Number(voucher.total) || !Number.isInteger(Number(voucher.adultos)) || Number(voucher.adultos)<1 || !Number.isInteger(Number(voucher.menores)) || Number(voucher.menores)<0 || !voucher.verificado)) {
-      const problemas=[]
-      if(!voucher.titular.trim())problemas.push('titular')
-      if(!voucher.checkin || !voucher.checkout || calcNoches(voucher.checkin,voucher.checkout)<=0)problemas.push('fechas válidas')
-      if(!Number.isFinite(Number(voucher.total)) || Number(voucher.total)<=0)problemas.push('precio total')
-      if(!Number.isFinite(Number(voucher.pagado)) || Number(voucher.pagado)<=0 || Number(voucher.pagado)>Number(voucher.total))problemas.push('pago recibido válido')
-      if(!Number.isInteger(Number(voucher.adultos)) || Number(voucher.adultos)<1 || !Number.isInteger(Number(voucher.menores)) || Number(voucher.menores)<0)problemas.push('cantidad de huéspedes')
-      showToast(problemas.length?`Revisá: ${problemas.join(', ')}.`:'Marcá la casilla de verificación de la reserva y el pago.'); return
+    if (tab === 'nodisponible' && ndDesde && ndHasta && calcNoches(ndDesde, ndHasta) <= 0) {
+      showToast('La fecha "hasta" tiene que ser posterior a "desde".'); return
+    }
+    if (tab === 'voucher') {
+      const problemas = problemasVoucher(voucher)
+      if (problemas.length) { showToast(`Revisá: ${problemas.join(', ')}.`); return }
+      if (!voucher.verificado) { showToast('Marcá la casilla de verificación de la reserva y el pago.'); return }
     }
     let txt = ''
     if (tab === 'cotizacion') {
@@ -286,9 +335,9 @@ export default function GeneradorMensajes() {
         <div className="message-tabs" style={s.tabs}>
           {[
             { id: 'cotizacion',   label: '💬 Cotización' },
-            { id: 'ficha',        label: '📄 Ficha' },
+            { id: 'ficha',        label: '📝 Ficha' },
             { id: 'detalle',      label: '💰 Detalle' },
-            { id: 'voucher',      label: '📄 Voucher' },
+            { id: 'voucher',      label: '🎫 Voucher' },
             { id: 'nodisponible', label: '❌ Sin disp.' },
             { id: 'derivacion',   label: '↗ Derivación' },
           ].map(t => (
@@ -308,13 +357,20 @@ export default function GeneradorMensajes() {
           <>
             <div style={s.cardLabel}>Departamento</div>
             <div style={s.selectWrap}>
-              <select aria-label="Departamento" style={s.select} value={propId} onChange={e => {setPropId(e.target.value);setResultado('');setVoucher(v=>({...v,verificado:false}))}}>
+              <select
+                aria-label="Departamento"
+                style={s.select}
+                value={propId}
+                disabled={deptoBloqueado}
+                onChange={e => { setPropId(e.target.value); setResultado(''); setVoucher(v => ({ ...v, verificado: false })) }}
+              >
                 {props.map(p => (
                   <option key={p.id} value={p.id}>{p.nombre}</option>
                 ))}
               </select>
               <span style={s.selectArrow}>▾</span>
             </div>
+            {deptoBloqueado && <div style={s.hint}>El departamento viene de la reserva elegida.</div>}
           </>
         )}
       </div>
@@ -377,19 +433,77 @@ export default function GeneradorMensajes() {
         </div>
       )}
 
-      {tab === 'voucher' && <section style={s.card}>
-        <div style={s.cardLabel}>Voucher de confirmación</div>
-        {origenVoucher==='cliente' && <label className="voucher-verificado" style={{marginTop:0,marginBottom:16}}><input type="checkbox" checked={incluirSinReservas} onChange={e=>{setIncluirSinReservas(e.target.checked);setSeleccionVoucher('');setVoucher(voucherVacio());setResultado('')}} />Incluir clientes sin reservas</label>}
-        <div style={{...s.row2,marginBottom:16}}>
-          <Campo label="Completar desde"><select aria-label="Completar desde" style={s.select} value={origenVoucher} onChange={e=>elegirOrigen(e.target.value)}><option value="manual">Carga manual</option><option value="cliente">Cliente existente</option><option value="reserva">Reserva existente</option></select></Campo>
-          {origenVoucher!=='manual' && <Campo label="Buscar"><input aria-label="Buscar cliente o reserva" type="search" style={s.input} placeholder="Nombre o departamento" value={busquedaVoucher} onChange={e=>setBusquedaVoucher(e.target.value)} /></Campo>}
-        </div>
-        {origenVoucher!=='manual' && <div style={{marginBottom:16}}>
-          {cargandoVoucher ? <p role="status">Cargando…</p> : errorVoucher ? <div role="alert">{errorVoucher}<button style={s.btnSecondary} onClick={()=>setReintentoVoucher(n=>n+1)}>Reintentar</button></div> : <Campo label={origenVoucher==='cliente'?'Cliente':'Reserva'}><select aria-label={origenVoucher==='cliente'?'Cliente':'Reserva'} style={s.select} value={seleccionVoucher} onChange={e=>elegirVoucher(e.target.value)}><option value="">Seleccionar</option>{(origenVoucher==='cliente'?clientesVoucher:reservasVoucher).map(item=>({id:item.id,label:origenVoucher==='cliente'?[item.nombre,item.apellido].filter(Boolean).join(' '):`${[item.clientes?.nombre,item.clientes?.apellido].filter(Boolean).join(' ') || 'Sin cliente'} · ${item.propiedades?.nombre || 'Departamento'} · ${fechaSolicitud(item.checkin)} → ${fechaSolicitud(item.checkout)}`})).filter(item=>item.id===seleccionVoucher || item.label.toLocaleLowerCase().includes(busquedaVoucher.toLocaleLowerCase())).map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select></Campo>}
-        </div>}
-        <div style={s.row2}>{Object.entries({titular:'Titular',checkin:'Ingreso',checkout:'Salida',adultos:'Adultos',menores:'Menores',total:'Precio total ($)',pagado:'Pagos recibidos ($)'}).map(([key,label])=><Campo label={label} key={key}><input style={s.input} type={['checkin','checkout'].includes(key)?'date':key==='titular'?'text':'number'} min={key==='menores'?0:key==='adultos'?1:0.01} step={['total','pagado'].includes(key)?'0.01':1} value={voucher[key]} onChange={e=>cambiarVoucher(key,e.target.value)} /></Campo>)}</div>
-        <label className="voucher-verificado"><input type="checkbox" checked={voucher.verificado} onChange={e=>cambiarVoucher('verificado',e.target.checked)} />Verifiqué que la reserva está confirmada y recibí este pago.</label>
-      </section>}
+      {/* ── Inputs Voucher ── */}
+      {tab === 'voucher' && (
+        <section style={s.card}>
+          <div style={s.cardLabel}>Voucher de confirmación</div>
+
+          <div style={{ ...s.row2, marginBottom: 16 }}>
+            <Campo label="Completar desde">
+              <select aria-label="Completar desde" style={s.select} value={origenVoucher} onChange={e => elegirOrigen(e.target.value)}>
+                <option value="manual">Carga manual</option>
+                <option value="cliente">Cliente existente</option>
+                <option value="reserva">Reserva existente</option>
+              </select>
+            </Campo>
+            {origenVoucher !== 'manual' && (
+              <Campo label="Buscar">
+                <input aria-label="Buscar cliente o reserva" type="search" style={s.input} placeholder="Nombre o departamento" value={busquedaVoucher} onChange={e => setBusquedaVoucher(e.target.value)} />
+              </Campo>
+            )}
+          </div>
+
+          {origenVoucher === 'cliente' && (
+            <label className="voucher-verificado" style={{ marginTop: 0, marginBottom: 16 }}>
+              <input
+                type="checkbox"
+                checked={incluirSinReservas}
+                onChange={e => { setIncluirSinReservas(e.target.checked); setSeleccionVoucher(''); setVoucher(voucherVacio()); setResultado('') }}
+              />
+              Incluir clientes sin reservas
+            </label>
+          )}
+
+          {origenVoucher !== 'manual' && (
+            <div style={{ marginBottom: 16 }}>
+              {cargandoVoucher ? (
+                <p role="status">Cargando…</p>
+              ) : errorVoucher ? (
+                <div role="alert">
+                  {errorVoucher}
+                  <button style={s.btnSecondary} onClick={() => setReintentoVoucher(n => n + 1)}>Reintentar</button>
+                </div>
+              ) : (
+                <Campo label={origenVoucher === 'cliente' ? 'Cliente' : 'Reserva'}>
+                  <select aria-label={origenVoucher === 'cliente' ? 'Cliente' : 'Reserva'} style={s.select} value={seleccionVoucher} onChange={e => elegirVoucher(e.target.value)}>
+                    <option value="">Seleccionar</option>
+                    {opcionesVoucher.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+                  </select>
+                </Campo>
+              )}
+            </div>
+          )}
+
+          <div style={s.row2}>
+            {CAMPOS_VOUCHER.map(({ key, label, type, min, step }) => (
+              <Campo label={label} key={key}>
+                <input
+                  style={s.input}
+                  type={type}
+                  {...(type === 'number' ? { min, step } : {})}
+                  value={voucher[key]}
+                  onChange={e => cambiarVoucher(key, e.target.value)}
+                />
+              </Campo>
+            ))}
+          </div>
+
+          <label className="voucher-verificado">
+            <input type="checkbox" checked={voucher.verificado} onChange={e => cambiarVoucher('verificado', e.target.checked)} />
+            Verifiqué que la reserva está confirmada y recibí este pago.
+          </label>
+        </section>
+      )}
 
       {/* ── Inputs Sin disponibilidad ── */}
       {tab === 'nodisponible' && (
@@ -421,6 +535,7 @@ export default function GeneradorMensajes() {
       {/* Resultado */}
       <div style={{ ...s.card, padding: 0, overflow: 'hidden' }}>
         <textarea
+          aria-label="Plantilla generada"
           style={s.textarea}
           value={resultado}
           onChange={e => setResultado(e.target.value)}
@@ -560,6 +675,7 @@ const s = {
     pointerEvents: 'none',
     fontSize: 12,
   },
+  hint: { fontSize: 12, color: '#7a7570', marginTop: 6 },
 
   input: {
     width: '100%',
