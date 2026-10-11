@@ -8,9 +8,9 @@ test('archivadas usa salida vigente de la reserva sin reactivar ni alterar confi
   for (const estado of ['abierta','archivada','eliminada']) assert.equal(vistaSolicitud({estado,salida_reserva:'2026-09-01'},'2026-10-01'),estado)
 })
 const s = { datos_cliente:{nombre:'Ana'},precio_total:1000,checkin:'2027-01-01',checkout:'2027-01-05',adultos:2,menores:0 }
-test('detalle compartido agrega horarios, noches, condiciones y solo la cuenta del departamento',()=>{
+test('detalle breve comparte fechas, noches, personas y solo la cuenta del departamento',()=>{
   const texto=detalleSolicitud(s,{nombre:'Depto 2',direccion:'Calle 1',alias_cbu:'cuenta.depto2',restriccion_vehiculos:true})
-  for(const fragmento of ['14:00','10:00','Duración: 4 noches','Dirección: Calle 1','cuenta.depto2','comprobante','ropa blanca','vehículos','24 hs','━━━━━━━━━━━━━━━━━━━━━━━━━━━','Check-in: 1 de enero de 2027','DETALLES DE LA RESERVA','MÉTODO DE PAGO','POLÍTICAS Y CONDICIONES']) assert.ok(texto.includes(fragmento))
+  for(const fragmento of ['*Reserva Depto 2*','4 noches','2 personas','cuenta.depto2','comprobante','24 hs','1 al 5 de enero de 2027']) assert.ok(texto.includes(fragmento))
   assert.doesNotMatch(texto,/voucher/i)
   assert.ok(!texto.includes('maratano.mp'))
   assert.ok(!texto.includes('0000003100056995782339'))
@@ -21,17 +21,22 @@ test('detalle compartido agrega horarios, noches, condiciones y solo la cuenta d
 test('el detalle de solicitud pide 30% sin prometer fechas bloqueadas',()=>{
  const texto=detalleSolicitud(s,{nombre:'Depto 1',alias_cbu:'mi.alias'})
  assert.match(texto,/30%/);assert.match(texto,/300/);assert.match(texto,/700/)
- assert.match(texto,/seña dentro de las 24 hs/);assert.match(texto,/mi.alias/)
+ assert.match(texto,/dentro de las próximas 24 hs/);assert.match(texto,/mi.alias/)
  assert.doesNotMatch(texto,/SIN CONFIRMAR|no bloquea fechas|no garantiza disponibilidad/)
- assert.match(texto,/envianos el comprobante para confirmar la reserva/)
+ assert.match(texto,/enviar el comprobante por acá y confirmamos la reserva/)
  assert.match(fichaSolicitud(s),/01\/01\/2027/)
 })
 test('voucher usa pagos vigentes y no confirma solicitudes sin pago',()=>{
  const r={...s,estado:'confirmada',clientes:{nombre:'Ana',apellido:'Prueba'},propiedades:{nombre:'Depto 1'},pagos:[{confirmado:true,monto:300},{confirmado:false,monto:500}]}
  const texto=voucherSolicitud(r)
- assert.match(texto,/CONFIRMACIÓN/);assert.match(texto,/300/);assert.match(texto,/700/)
+ assert.match(texto,/Reserva confirmada/);assert.match(texto,/300/);assert.match(texto,/700/)
  assert.throws(()=>voucherSolicitud({...r,estado:'pendiente'}),/confirmada/)
  assert.throws(()=>voucherSolicitud({...r,pagos:[]}),/pago/)
+})
+test('la negrita no incluye espacios finales del nombre del departamento', () => {
+ for (const nombre of ['Depto 2 ', 'Depto 3\n', ' Depto 2\t']) {
+   assert.equal(detalleSolicitud(s,{nombre}).split('\n')[0], `*Reserva ${nombre.trim()}*`)
+ }
 })
 test('precarga de voucher usa titular, fechas y solo pagos confirmados sin autorizar automaticamente',()=>{
   const data=datosVoucherReserva({clientes:{nombre:'Ana',apellido:'Prueba'},checkin:'2027-01-01',checkout:'2027-01-05',adultos:2,menores:1,precio_total:1000,pagos:[{confirmado:true,monto:'300.25'},{confirmado:false,monto:500},{confirmado:true,monto:'20.50'}]})

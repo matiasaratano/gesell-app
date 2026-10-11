@@ -287,9 +287,9 @@ function match(row,u) {
   await page.getByText(/Cierre de booking:/).waitFor();
   assert.equal(await page.locator('select').first().isDisabled(),true);
   const dateFields=page.locator('input[type="date"]');
-  await dateFields.nth(0).fill('2026-12-31');
+  await dateFields.nth(0).fill('2026-12-25');await dateFields.nth(1).fill('2026-12-31');
   await page.getByRole('button',{name:/Verificar disponibilidad/}).click();
-  await page.getByText('Elegí fechas dentro del cierre original.').waitFor();
+  await page.getByText('Las fechas deben incluir al menos una noche del cierre original.').waitFor();
   await dateFields.nth(0).fill('2027-01-08');await dateFields.nth(1).fill('2027-01-12');
   await page.evaluate(()=>window.scrollTo(0,0));
   await page.screenshot({path:`${output}/${width}-reserva-dentro-cierre-fechas.png`,fullPage:true});

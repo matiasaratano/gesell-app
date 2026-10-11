@@ -43,7 +43,7 @@ export function detalleSolicitud(s, propiedad) {
   const armar = lineas => lineas.filter(l => l !== null).join('\n')
 
   return armar([
-    `*Reserva ${propiedad.nombre}*`,
+    `*Reserva ${String(propiedad.nombre || '').trim()}*`,
     resumen,
     `Total: ${dinero(total)}`,
     '',

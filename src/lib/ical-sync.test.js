@@ -38,6 +38,17 @@ function database(initial, failRead = false) {
 }
 const cierre = {id:'closure',propiedad_id:'p1',canal_origen:'booking',estado:'cerrada',cliente_id:null,precio_total:null,pagos:[],checkin:'2090-01-01',checkout:'2090-01-10'}
 const ics = body => `BEGIN:VCALENDAR\r\nVERSION:2.0\r\n${body}END:VCALENDAR\r\n`
+test('sync completa noches faltantes junto a cierres parciales y una reserva directa', async () => {
+ const directa={...cierre,id:'directa',estado:'confirmada',canal_origen:'directo',cliente_id:'c1',checkin:'2090-01-03',checkout:'2090-01-05'}
+ const db=database([directa,{...cierre,checkin:'2090-01-05',checkout:'2090-01-07'}])
+ const evento={start:'2090-01-01',end:'2090-01-10',summary:'CLOSED'}
+ await upsertIcalReservas(db,[evento],'p1','booking')
+ assert.deepEqual(db.rows.filter(r=>r.estado==='cerrada').map(r=>[r.checkin,r.checkout]).sort(),[['2090-01-01','2090-01-03'],['2090-01-05','2090-01-07'],['2090-01-07','2090-01-10']])
+ assert.deepEqual(db.rows.find(r=>r.id==='directa'),directa)
+ const before=structuredClone(db.rows)
+ await upsertIcalReservas(db,[evento],'p1','booking')
+ assert.deepEqual(db.rows,before)
+})
 test('reserva directa sobre cierre sigue intacta al reimportar todo el cierre de Booking y Airbnb', async () => {
   for (const canal of ['booking','airbnb']) {
     const directa={...cierre,id:'directa',canal_origen:'directo',estado:'confirmada',cliente_id:'c1',precio_total:1000,pagos:[{monto:300}],checkin:'2090-01-04',checkout:'2090-01-06'}

@@ -226,8 +226,16 @@ export async function upsertIcalReservas(supabase, eventos, propiedadId, canal) 
             .neq('estado', 'cancelada')
 
           if (subError) throw subError
-          if (!subOverlaps || subOverlaps.length === 0) {
-            const { error: insertError } = await supabase.from('reservas').insert(subPayload)
+          // Existing partial closures must not hide uncovered nights in this interval.
+          let desde = tramo.start
+          const huecos = []
+          for (const ocupado of [...(subOverlaps || [])].sort((a,b) => a.checkin.localeCompare(b.checkin))) {
+            if (ocupado.checkin > desde) huecos.push({ checkin: desde, checkout: ocupado.checkin < tramo.end ? ocupado.checkin : tramo.end })
+            if (ocupado.checkout > desde) desde = ocupado.checkout
+          }
+          if (desde < tramo.end) huecos.push({ checkin: desde, checkout: tramo.end })
+          for (const hueco of huecos) {
+            const { error: insertError } = await supabase.from('reservas').insert({ ...subPayload, ...hueco })
             if (insertError) throw insertError
             stats.inserted += 1
             stats.insertedBloqueadas += 1

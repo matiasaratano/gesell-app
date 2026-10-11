@@ -308,6 +308,7 @@ export function CRUDReservas({ reservaInicial = null, onSaved, onCancel, onDelet
 
   async function guardarNuevoClienteRapido(e) {
     if (e) e.preventDefault()
+    if (guardandoCliRapido) return
     if (!nuevoCliData.nombre.trim()) {
       showToast('El nombre del cliente es obligatorio')
       return
@@ -1022,8 +1023,14 @@ function CRUDClientes() {
   }, [busqueda])
 
   async function guardar() {
+    if (guardando) return
+    if (!editando.nombre?.trim()) {
+      showToast('El nombre del cliente es obligatorio')
+      return
+    }
     setGuardando(true)
     const { id, created_at, ...campos } = editando
+    campos.nombre = campos.nombre.trim()
     const { error } = id
       ? await supabase.from('clientes').update(campos).eq('id', id)
       : await supabase.from('clientes').insert(campos)

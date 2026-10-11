@@ -146,7 +146,7 @@ export default function NuevaReserva({ onExito }) {
     if (cierreId) {
       setAutorizaCierres(false); setCierresAutorizados([])
       if (!cierreOrigen || cierreError) return setDispError('No se pudo verificar el cierre de origen.')
-      if (propId !== cierreOrigen.propiedad_id || checkin < cierreOrigen.checkin || checkout > cierreOrigen.checkout) return setDispError('Elegí fechas dentro del cierre original.')
+      if (propId !== cierreOrigen.propiedad_id || checkin >= cierreOrigen.checkout || checkout <= cierreOrigen.checkin) return setDispError('Las fechas deben incluir al menos una noche del cierre original.')
       setCheckingDisp(true)
       try {
         const cierres = await revisarDisponibilidadSolicitud(supabase, { propiedad_id: propId, checkin, checkout })
@@ -375,7 +375,7 @@ export default function NuevaReserva({ onExito }) {
       {paso === 0 && (
         <Seccion titulo="Propiedad y fechas">
           {cierreId && <div className="cobros cobros-aviso reserva-cierre-aviso">
-            {cierreError ? <p role="alert">{cierreError}</p> : cierreOrigen ? <p>Cierre de {cierreOrigen.canal_origen}: {formatFecha(cierreOrigen.checkin)} → {formatFecha(cierreOrigen.checkout)}. Elegí las fechas de la reserva; las noches restantes seguirán cerradas.</p> : <p role="status">Cargando cierre…</p>}
+            {cierreError ? <p role="alert">{cierreError}</p> : cierreOrigen ? <p>Cierre de {cierreOrigen.canal_origen}: {formatFecha(cierreOrigen.checkin)} → {formatFecha(cierreOrigen.checkout)}. Podés sumar noches libres; verificaremos toda la estadía. El resto del cierre se conserva.</p> : <p role="status">Cargando cierre…</p>}
             <button type="button" style={s.btnSecundario} onClick={() => navigate('/calendario')}>Volver al calendario</button>
           </div>}
           <Campo label="Propiedad *">
@@ -400,8 +400,7 @@ export default function NuevaReserva({ onExito }) {
                 type="date"
                 style={s.input}
                 value={checkin}
-                min={cierreId ? cierreOrigen?.checkin : toStr(new Date().getFullYear(), new Date().getMonth() + 1, new Date().getDate())}
-                max={cierreId ? cierreOrigen?.checkout : undefined}
+                min={cierreId ? undefined : toStr(new Date().getFullYear(), new Date().getMonth() + 1, new Date().getDate())}
                 onChange={e => { setCheckin(e.target.value); setDispError('') }}
               />
             </Campo>
@@ -411,7 +410,6 @@ export default function NuevaReserva({ onExito }) {
                 style={s.input}
                 value={checkout}
                 min={checkin || undefined}
-                max={cierreId ? cierreOrigen?.checkout : undefined}
                 onChange={e => { setCheckout(e.target.value); setDispError('') }}
               />
             </Campo>
