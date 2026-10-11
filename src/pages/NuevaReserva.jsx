@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import PagoFields from '../components/PagoFields'
 import { avisoCapacidad } from '../lib/capacidad.js'
 import { useConfirmacion } from '../lib/confirmacion.js'
+import { confirmarClienteNuevo } from '../lib/clientes-duplicados.js'
 import { cierreImportadoDisponible, revisarDisponibilidadSolicitud } from '../lib/disponibilidad-solicitud.js'
 import { pagoVacio, datosPago } from '../lib/operacion-reserva.js'
 import '../components/cobros.css'
@@ -284,6 +285,7 @@ export default function NuevaReserva({ onExito }) {
 
     try {
       if (capacidadAviso && !await confirmar(`${capacidadAviso} ¿Guardar igualmente como excepción?`)) return
+      if ((modoCliente === 'nuevo' || !clienteId) && !await confirmarClienteNuevo(supabase, clienteForm, confirmar)) return
       const pago = conPago ? datosPago(primerPago, operacionRef.current.pago) : null
       const { data: nuevaId, error: errRes } = await supabase.rpc(cierreId ? 'crear_reserva_dentro_cierre' : 'crear_reserva_con_pago', {
         ...(cierreId ? { p_cierre_id: cierreId, p_cierres: cierresAutorizados } : {}),

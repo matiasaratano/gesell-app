@@ -103,18 +103,18 @@ test('no permite extender un cierre hacia noches ocupadas por otra reserva',asyn
   assert.equal((await db.query('select * from clientes')).rows.length,0)
  }finally{await db.close()}
 })
-test('cliente duplicado no deja cierres partidos ni una reserva a medias',async()=>{
+test('excepcion de cliente permite reservar sin duplicar la operacion al reintentar',async()=>{
  const {db}=await base();try{
   const {c,b,run}=await cierreDirecto(db)
   await db.exec('reset role')
-  await db.exec(sql('../supabase/migrations/20261011_clientes_sin_duplicados.sql'))
+  await db.exec(sql('../supabase/migrations/20261011_clientes_aviso_duplicados.sql'))
   await db.query('insert into clientes(nombre,apellido,dni) values($1,$2,$3)',[datos.nombre,datos.apellido,datos.dni])
   await db.exec('set role authenticated')
-  await assert.rejects(run(),/Ya existe un cliente/)
-  assert.equal((await db.query('select * from reservas where id=$1',[b.id])).rows.length,0)
-  assert.equal((await db.query('select * from clientes')).rows.length,1)
+  await run();await run()
+  assert.equal((await db.query('select * from reservas where id=$1',[b.id])).rows.length,1)
+  assert.equal((await db.query('select * from clientes')).rows.length,2)
   const cierre=(await db.query('select checkin::text,checkout::text from reservas where id=$1',[c.id])).rows[0]
-  assert.deepEqual(cierre,{checkin:c.checkin,checkout:c.checkout})
+  assert.deepEqual(cierre,{checkin:c.checkin,checkout:b.checkin})
  }finally{await db.close()}
 })
 test('reserva directa nunca reemplaza cierres con datos, cierres manuales o reservas reales',async()=>{

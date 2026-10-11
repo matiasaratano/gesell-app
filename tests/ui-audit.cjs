@@ -10,7 +10,7 @@ const properties = [
  {id:'p1',nombre:'Depto 1',activa:true,capacidad_max:4,direccion:'Calle de prueba 123',tipo:'depto',alias_cbu:'prueba.alias',precio_noche:50000},
  {id:'p2',nombre:'Duplex San Bernardo',activa:true,capacidad_max:6,tipo:'duplex'}
 ];
-const clients = [{id:'c1',nombre:'Valeria',apellido:'Prueba',dni:'12345678',whatsapp:'5491100000000',ciudad:'Buenos Aires'}];
+const clients = [{id:'c1',nombre:'Valeria',apellido:'Prueba',dni:'12345678',whatsapp:'5491100000000',ciudad:'Buenos Aires'}, {id:'c-sin',nombre:'Cliente sin reserva'}];
 const initialRows = [
  {id:'r1',propiedad_id:'p1',cliente_id:'c1',clientes:clients[0],propiedades:properties[0],checkin:'2026-09-15',checkout:'2026-10-15',noches:30,precio_total:300000,estado:'confirmada',canal_origen:'directo',modalidad:'mensual',requiere_sena:false,plan_mensual:[{mes:'2026-09-01',importe:150000,vencimiento:'2026-09-20'}]},
  {id:'r2',propiedad_id:'p2',cliente_id:null,clientes:null,propiedades:properties[1],checkin:'2026-10-30',checkout:'2026-11-05',precio_total:null,estado:'pendiente',canal_origen:'booking',modalidad:'temporal',requiere_sena:true,plan_mensual:[]},
@@ -41,7 +41,7 @@ function match(row,u) {
    const req=route.request(),u=new URL(req.url());
    if(u.pathname.startsWith('/rest/v1/')) {
     const table=u.pathname.split('/').pop(),body=req.postDataJSON();
-    if(table==='clientes' && u.searchParams.get('select')==='*' && req.method()==='GET') clientListReads++;
+    if(table==='clientes' && u.searchParams.get('select')?.startsWith('*') && req.method()==='GET') clientListReads++;
     if(table==='crear_reserva_dentro_cierre') {
      assert.equal(body.p_cierre_id,'cierre-prueba');
      assert.equal(body.p_cierres.length,1);
@@ -61,6 +61,11 @@ function match(row,u) {
     if(fail)return route.fulfill({status:503,json:{message:'Servicio no disponible (prueba)'}});
     let data=table==='propiedades'?properties:table==='clientes'?clients:table==='reservas'?rows:[];
     data=data.filter(r=>match(r,u));
+    if(table==='clientes' && req.method()==='GET' && u.searchParams.get('select')?.includes('reservas')) {
+     data=data.map(c=>({...c,reservas:rows.filter(r=>r.cliente_id===c.id).map(r=>({id:r.id}))}));
+     if(u.searchParams.get('select').includes('!inner'))data=data.filter(c=>c.reservas.length);
+     if(u.searchParams.get('reservas')==='is.null')data=data.filter(c=>!c.reservas.length);
+    }
     if(req.method()!=='GET') {writes.push({table,method:req.method()});if(req.method()==='PATCH')data.forEach(r=>Object.assign(r,body));}
     if(table==='reservas')data=data.map(r=>({...r,pagos:[],limpieza_completada_para:r.checkout}));
     if(req.headers().accept?.includes('vnd.pgrst.object'))data=data[0]||null;
@@ -182,6 +187,26 @@ function match(row,u) {
    }
    if(route==='/admin?seccion=clientes') {
     assert.equal(dimensions.scroll <= width, true);
+    await page.getByRole('button',{name:'+ Nuevo',exact:true}).click();
+    await page.getByPlaceholder('Juan García').fill('Valeria Prueba');
+    const antes=writes.filter(w=>w.table==='clientes' && w.method==='POST').length;
+    await page.getByRole('button',{name:'✓ Guardar',exact:true}).click();
+    const aviso=page.getByRole('dialog',{name:'Posible cliente duplicado'});
+    await aviso.waitFor();
+    await page.screenshot({path:`${output}/${width}-cliente-duplicado.png`,fullPage:true});
+    await aviso.getByRole('button',{name:'Cancelar',exact:true}).click();
+    assert.equal(writes.filter(w=>w.table==='clientes' && w.method==='POST').length,antes);
+    await page.getByRole('button',{name:'✓ Guardar',exact:true}).click();
+    await aviso.getByRole('button',{name:'Crear de todas formas',exact:true}).click();
+    await page.getByRole('combobox',{name:'Clientes por reservas'}).waitFor();
+    assert.equal(writes.filter(w=>w.table==='clientes' && w.method==='POST').length,antes+1);
+    const filtro=page.getByRole('combobox',{name:'Clientes por reservas'});
+    assert.equal(await filtro.inputValue(),'con');
+    assert.equal(await page.getByRole('button',{name:'Ver ficha de Cliente sin reserva',exact:true}).count(),0);
+    await filtro.selectOption('sin');await page.getByRole('button',{name:'Ver ficha de Cliente sin reserva',exact:true}).waitFor();
+    assert.equal(await page.getByRole('button',{name:'Ver ficha de Valeria Prueba',exact:true}).count(),0);
+    await filtro.selectOption('todos');await page.getByRole('button',{name:'Ver ficha de Valeria Prueba',exact:true}).waitFor();
+    await filtro.selectOption('con');await page.getByRole('button',{name:'Ver ficha de Valeria Prueba',exact:true}).waitFor();
     if(width===1440) assert.ok(Math.abs((await page.locator('.admin-tabla-clientes tbody tr').first().boundingBox()).height-reservationRowHeight)<2,'Client and reservation rows should have the same compact height');
     await page.getByRole('button',{name:'Ver ficha de Valeria Prueba',exact:true}).click();
     await page.getByRole('button',{name:'Cancelar',exact:true}).first().waitFor();

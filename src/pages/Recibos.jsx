@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { direccionAlojamiento } from '../lib/direccion-alojamiento.js';
 import { useConfirmacion } from '../lib/confirmacion.js';
+import { confirmarClienteNuevo } from '../lib/clientes-duplicados.js';
 import { useSearchParams } from 'react-router-dom';
 import SeleccionRecibo from '../components/SeleccionRecibo';
 import { datosReciboPago } from '../lib/recibo-pago.js';
@@ -201,6 +202,7 @@ function PanelRecibo({ showToast, reserva = null, pago = null, verificar, verifi
   const [tel, setTel] = useState(inicial.tel || '');
   const [email, setEmail] = useState(inicial.email || '');
   const [guardando, setGuardando] = useState(false);
+  const confirmarAlta = useConfirmacion();
   const [correo, setCorreo] = useState(null);
   const correoDialog = useRef(null);
 
@@ -322,18 +324,17 @@ function PanelRecibo({ showToast, reserva = null, pago = null, verificar, verifi
       showToast('Completá al menos el nombre');
       return;
     }
-    if (dni && !clienteId) {
-      const { data: existente } = await supabase
-        .from('clientes')
-        .select('id')
-        .eq('dni', dni)
-        .limit(1)
-      if (existente?.length > 0) {
-        showToast('Ya existe un cliente con ese DNI');
+    setGuardando(true);
+    try {
+      if (!await confirmarClienteNuevo(supabase, { nombre, dni, email, whatsapp: tel }, confirmarAlta)) {
+        setGuardando(false);
         return;
       }
+    } catch (error) {
+      setGuardando(false);
+      showToast(error.message);
+      return;
     }
-    setGuardando(true);
     const { data, error } = await supabase.from('clientes').insert({
       nombre,
       apellido: '',

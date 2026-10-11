@@ -38,6 +38,20 @@ function database(initial, failRead = false) {
 }
 const cierre = {id:'closure',propiedad_id:'p1',canal_origen:'booking',estado:'cerrada',cliente_id:null,precio_total:null,pagos:[],checkin:'2090-01-01',checkout:'2090-01-10'}
 const ics = body => `BEGIN:VCALENDAR\r\nVERSION:2.0\r\n${body}END:VCALENDAR\r\n`
+test('Depto 3: conserva ambas reservas y cierra desde el 10 de enero sin falsos conflictos al repetir', async () => {
+ const gestionadas = [
+  {...cierre,id:'booking',estado:'pendiente',cliente_id:'c1',checkin:'2026-12-30',checkout:'2027-01-03'},
+  {...cierre,id:'manual',estado:'confirmada',canal_origen:'directo',cliente_id:'c2',precio_total:910,checkin:'2027-01-03',checkout:'2027-01-10'},
+ ]
+ const db=database(gestionadas)
+ const eventos=[{start:'2026-12-24',end:'2027-06-14',summary:'CLOSED - Not available'}]
+ for(let i=0;i<2;i++) {
+  const stats=await upsertIcalReservas(db,eventos,'p1','booking')
+  assert.equal(stats.conflicts.length,0)
+  assert.deepEqual(db.rows.filter(r=>r.estado==='cerrada').map(r=>[r.checkin,r.checkout]).sort(),[['2026-12-24','2026-12-30'],['2027-01-10','2027-06-14']])
+  for(const r of gestionadas) assert.deepEqual(db.rows.find(x=>x.id===r.id),r)
+ }
+})
 test('sync completa noches faltantes junto a cierres parciales y una reserva directa', async () => {
  const directa={...cierre,id:'directa',estado:'confirmada',canal_origen:'directo',cliente_id:'c1',checkin:'2090-01-03',checkout:'2090-01-05'}
  const db=database([directa,{...cierre,checkin:'2090-01-05',checkout:'2090-01-07'}])

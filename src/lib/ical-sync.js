@@ -242,7 +242,10 @@ export async function upsertIcalReservas(supabase, eventos, propiedadId, canal) 
             procesadoAlgunTramo = true
           }
         }
-        if (procesadoAlgunTramo) continue
+        if (procesadoAlgunTramo || tramos.length > 0) {
+          if (!procesadoAlgunTramo) stats.skipped += 1
+          continue
+        }
       }
 
       stats.conflicts.push({ checkin, checkout, estado: estadoNuevo, reservas: conflictoExterno.map(row => ({ id: row.id, canal: row.canal_origen, estado: row.estado })) })

@@ -5,6 +5,7 @@ import CobrosReserva from '../components/CobrosReserva'
 import { useConfirmacion } from '../lib/confirmacion.js'
 import { avisoCapacidad } from '../lib/capacidad.js'
 import './admin-listas.css'
+import { confirmarClienteNuevo } from '../lib/clientes-duplicados.js'
 
 const SECCIONES = [
   { id: 'propiedades', label: '🏠 Propiedades' },
@@ -314,6 +315,16 @@ export function CRUDReservas({ reservaInicial = null, onSaved, onCancel, onDelet
       return
     }
     setGuardandoCliRapido(true)
+    try {
+      if (!await confirmarClienteNuevo(supabase, nuevoCliData, confirmar)) {
+        setGuardandoCliRapido(false)
+        return
+      }
+    } catch (error) {
+      setGuardandoCliRapido(false)
+      showToast(error.message)
+      return
+    }
     const { data, error } = await supabase
       .from('clientes')
       .insert({
@@ -980,6 +991,7 @@ function CRUDClientes() {
   const [toast,    setToast]    = useState('')
   const [busqueda, setBusqueda] = useState('')
   const [filtroRepetidor, setFiltroRepetidor] = useState('todos')
+  const [filtroReservas, setFiltroReservas] = useState('con')
   const [ordenarPor, setOrdenarPor] = useState('nombre')
   const [historialReservas, setHistorialReservas] = useState([])
 
@@ -1007,20 +1019,22 @@ function CRUDClientes() {
   async function cargar(q = '') {
     const id = ++cargaId.current
     setLoading(true)
-    let query = supabase.from('clientes').select('*').order('nombre')
+    let query = supabase.from('clientes').select(filtroReservas === 'con' ? '*, reservas!inner(id)' : '*, reservas(id)').order('nombre')
+    if (filtroReservas === 'sin') query = query.is('reservas', null)
     if (q.length >= 2) {
       query = query.or(`nombre.ilike.%${q}%,apellido.ilike.%${q}%,dni.ilike.%${q}%`)
     }
-    const { data } = await query.limit(100)
+    const { data, error } = await query.limit(100)
     if (id !== cargaId.current) return
-    setLista(data ?? [])
+    setLista((data ?? []).map(({ reservas, ...cliente }) => cliente))
+    if (error) showToast('No se pudieron cargar los clientes. Reintentá.')
     setLoading(false)
   }
 
   useEffect(() => {
     const t = setTimeout(() => cargar(busqueda), busqueda ? 300 : 0)
     return () => { clearTimeout(t); cargaId.current++ }
-  }, [busqueda])
+  }, [busqueda, filtroReservas])
 
   async function guardar() {
     if (guardando) return
@@ -1031,6 +1045,18 @@ function CRUDClientes() {
     setGuardando(true)
     const { id, created_at, ...campos } = editando
     campos.nombre = campos.nombre.trim()
+    if (!id) {
+      try {
+        if (!await confirmarClienteNuevo(supabase, campos, confirmar)) {
+          setGuardando(false)
+          return
+        }
+      } catch (error) {
+        setGuardando(false)
+        showToast(error.message)
+        return
+      }
+    }
     const { error } = id
       ? await supabase.from('clientes').update(campos).eq('id', id)
       : await supabase.from('clientes').insert(campos)
@@ -1219,8 +1245,13 @@ function CRUDClientes() {
         <input style={{ ...s.input, flex: 1, minWidth: 200 }} placeholder="Buscar por nombre, apellido o DNI…"
           value={busqueda} onChange={e => setBusqueda(e.target.value)} />
         
-        <select style={{ ...s.input, width: 150 }} value={filtroRepetidor} onChange={e => setFiltroRepetidor(e.target.value)}>
-          <option value="todos">Todos los clientes</option>
+        <select aria-label="Clientes por reservas" style={{ ...s.input, width: 170 }} value={filtroReservas} onChange={e => setFiltroReservas(e.target.value)}>
+          <option value="con">Con reservas</option>
+          <option value="todos">Todos</option>
+          <option value="sin">Sin reservas</option>
+        </select>
+        <select aria-label="Frecuencia del cliente" style={{ ...s.input, width: 150 }} value={filtroRepetidor} onChange={e => setFiltroRepetidor(e.target.value)}>
+          <option value="todos">Cualquiera</option>
           <option value="repetidores">⭐ Repetidores</option>
         </select>
 

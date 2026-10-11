@@ -3,6 +3,7 @@ import { ConfirmacionContext } from '../lib/confirmacion.js'
 
 export default function Confirmaciones({ children }) {
   const [mensaje, setMensaje] = useState('')
+  const [opciones, setOpciones] = useState({})
   const resolver = useRef(null)
   const dialogo = useRef(null)
   useEffect(() => {
@@ -15,16 +16,16 @@ export default function Confirmaciones({ children }) {
     resolver.current?.(valor)
     resolver.current = null
   }
-  function confirmar(texto) {
+  function confirmar(texto, opciones = {}) {
     if (resolver.current) return Promise.resolve(false)
-    return new Promise(resolve => { resolver.current = resolve; setMensaje(texto) })
+    return new Promise(resolve => { resolver.current = resolve; setOpciones(opciones); setMensaje(texto) })
   }
   return <ConfirmacionContext.Provider value={confirmar}>
     {children}
     <dialog ref={dialogo} className="cobros app-confirmacion" aria-labelledby="confirmacion-titulo" aria-describedby="confirmacion-mensaje" onCancel={e => { e.preventDefault(); terminar(false) }}>
-      <h3 id="confirmacion-titulo">Confirmar eliminación</h3>
-      <p id="confirmacion-mensaje">{mensaje}</p>
-      <div className="cobros-acciones"><button autoFocus onClick={() => terminar(false)}>Cancelar</button><button className="cobros-danger" onClick={() => terminar(true)}>Eliminar</button></div>
+      <h3 id="confirmacion-titulo">{opciones.titulo || 'Confirmar eliminación'}</h3>
+      <p id="confirmacion-mensaje" style={{whiteSpace:'pre-line'}}>{mensaje}</p>
+      <div className="cobros-acciones"><button autoFocus onClick={() => terminar(false)}>Cancelar</button><button className={opciones.aceptar ? undefined : 'cobros-danger'} onClick={() => terminar(true)}>{opciones.aceptar || 'Eliminar'}</button></div>
     </dialog>
   </ConfirmacionContext.Provider>
 }

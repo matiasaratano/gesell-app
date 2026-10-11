@@ -7,6 +7,7 @@ import { detalleSolicitud, voucherSolicitud, fechaSolicitud, solicitudLista, vis
 import { revisarDisponibilidadSolicitud } from '../lib/disponibilidad-solicitud.js'
 import { avisoCapacidad } from '../lib/capacidad.js'
 import { useConfirmacion } from '../lib/confirmacion.js'
+import { confirmarClienteNuevo } from '../lib/clientes-duplicados.js'
 import '../components/cobros.css'
 import './solicitudes.css'
 
@@ -171,6 +172,7 @@ function Confirmar({s,cerrar,onSaved}) {
       if (actuales.length && (!autoriza || JSON.stringify(actuales)!==JSON.stringify(cierres))) {
         setCierres(actuales);setAutoriza(false);return
       }
+      if (!s.cliente_id && !await confirmarClienteNuevo(supabase, s.datos_cliente, confirmar)) return
       const {data,error:err}=await supabase.rpc(actuales.length?'confirmar_solicitud_sobre_cierres':'confirmar_solicitud',{p_id:s.id,p_version:s.updated_at,p_pago:payload,...(actuales.length?{p_cierres:actuales}:{})})
       if (err?.code==='PGRST202') throw new Error('Falta ejecutar la actualización SQL para confirmar sobre cierres importados.')
       if(err || !data) throw err || new Error('No se recibió confirmación. Podés reintentar sin duplicar el pago.')
