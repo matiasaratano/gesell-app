@@ -75,6 +75,7 @@ const output='/tmp/gesell-solicitudes';fs.mkdirSync(output,{recursive:true});
     await guestPage.getByLabel('Ingreso',{exact:true}).fill('2090-01-10');await guestPage.getByLabel('Salida',{exact:true}).fill('2090-01-15');
     assert.equal(await guestPage.getByLabel('Departamento',{exact:true}).count(),0);
     assert.equal(await guestPage.getByLabel('Precio total',{exact:true}).count(),0);
+    assert.equal(await guestPage.locator('.solicitud-monograma').count(),0);
     for(const [label,value] of Object.entries({'Nombre':'Ana','Apellido':'Prueba','DNI o pasaporte':'12345678','Teléfono':'1123456789','Email':'ana@example.com'}))await guestPage.getByLabel(label,{exact:true}).fill(value);
     await guestPage.getByRole('checkbox').check();
     await guestPage.screenshot({path:`${output}/${width}-publico.png`,fullPage:true});

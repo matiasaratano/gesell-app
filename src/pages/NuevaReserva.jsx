@@ -54,6 +54,7 @@ export default function NuevaReserva({ onExito }) {
   const [cierreError, setCierreError] = useState('')
   const [cierresAutorizados, setCierresAutorizados] = useState([])
   const [autorizaCierres, setAutorizaCierres] = useState(false)
+  const cierreParaReserva = cierreId || cierresAutorizados[0]?.id
   const initialPropId = searchParams.get('propiedad_id') || ''
   const initialCheckin = searchParams.get('checkin') || ''
   const initialCheckout = searchParams.get('checkout') || ''
@@ -144,62 +145,18 @@ export default function NuevaReserva({ onExito }) {
     if (!checkin)  return setDispError('Ingresá la fecha de check-in.')
     if (!checkout) return setDispError('Ingresá la fecha de check-out.')
     if (checkout <= checkin) return setDispError('El check-out debe ser posterior al check-in.')
+    setAutorizaCierres(false); setCierresAutorizados([])
     if (cierreId) {
-      setAutorizaCierres(false); setCierresAutorizados([])
       if (!cierreOrigen || cierreError) return setDispError('No se pudo verificar el cierre de origen.')
       if (propId !== cierreOrigen.propiedad_id || checkin >= cierreOrigen.checkout || checkout <= cierreOrigen.checkin) return setDispError('Las fechas deben incluir al menos una noche del cierre original.')
-      setCheckingDisp(true)
-      try {
-        const cierres = await revisarDisponibilidadSolicitud(supabase, { propiedad_id: propId, checkin, checkout })
-        if (!cierres.some(c => c.id === cierreId && c.checkin === cierreOrigen.checkin && c.checkout === cierreOrigen.checkout)) throw new Error('El cierre cambió. Volvé a abrirlo desde el calendario.')
-        setCierresAutorizados(cierres); setPaso(1)
-      } catch (e) { setDispError(e.message) }
-      finally { setCheckingDisp(false) }
-      return
     }
-
     setCheckingDisp(true)
-    const [resReservas, resBloqueos] = await Promise.all([
-      supabase
-        .from('reservas')
-        .select('id, checkin, checkout, clientes(nombre, apellido)')
-        .eq('propiedad_id', propId)
-        .neq('estado', 'cancelada')
-        .lt('checkin', checkout)  // comienza antes de que termine la nueva
-        .gt('checkout', checkin), // termina después de que empiece la nueva
-      supabase
-        .from('bloqueos')
-        .select('id, fecha_inicio, fecha_fin, motivo')
-        .eq('propiedad_id', propId)
-        .lt('fecha_inicio', checkout)
-        .gt('fecha_fin', checkin),
-    ])
-
-    setCheckingDisp(false)
-
-    if (resReservas.error) return setDispError('Error verificando disponibilidad.')
-    if (resBloqueos.error) return setDispError('Error verificando bloqueos manuales.')
-
-    const conflictos = resReservas.data ?? []
-    if (conflictos && conflictos.length > 0) {
-      const c = conflictos[0]
-      const nombreCliente = c.clientes?.nombre
-        ? `${c.clientes.nombre} ${c.clientes.apellido || ''}`.trim()
-        : 'otro huésped / fecha bloqueada'
-      return setDispError(
-        `Sin disponibilidad: existe una reserva de ${nombreCliente} del ${formatFecha(c.checkin)} al ${formatFecha(c.checkout)}.`
-      )
-    }
-
-    const bloqueos = resBloqueos.data ?? []
-    if (bloqueos.length > 0) {
-      const b = bloqueos[0]
-      return setDispError(
-        `Sin disponibilidad: esas fechas están cerradas manualmente del ${formatFecha(b.fecha_inicio)} al ${formatFecha(b.fecha_fin)}${b.motivo ? ` (${b.motivo})` : ''}.`
-      )
-    }
-
-    setPaso(1)
+    try {
+      const cierres = await revisarDisponibilidadSolicitud(supabase, { propiedad_id: propId, checkin, checkout })
+      if (cierreId && !cierres.some(c => c.id === cierreId && c.checkin === cierreOrigen.checkin && c.checkout === cierreOrigen.checkout)) throw new Error('El cierre cambió. Volvé a abrirlo desde el calendario.')
+      setCierresAutorizados(cierres); setPaso(1)
+    } catch (e) { setDispError(e.code === 'FECHAS_OCUPADAS' ? 'Sin disponibilidad: hay una reserva o un cierre gestionado en estas fechas. Solo se pueden reemplazar cierres preventivos importados sin huésped, precio ni pagos.' : e.message) }
+    finally { setCheckingDisp(false) }
   }
 
   // ── PASO 2: buscar clientes ─────────────────────────────────────────────────
@@ -276,7 +233,7 @@ export default function NuevaReserva({ onExito }) {
   async function guardarReserva() {
     if (ocupadoRef.current) return
     setGuardError('')
-    if (cierreId && (!autorizaCierres || !cierresAutorizados.length)) return setGuardError('Confirmá que los cierres son preventivos antes de guardar.')
+    if (cierreParaReserva && (!autorizaCierres || !cierresAutorizados.length)) return setGuardError('Confirmá que los cierres son preventivos antes de guardar.')
     if (!precioTotal || !Number.isFinite(Number(precioTotal)) || Number(precioTotal) <= 0) {
       return setGuardError('Ingresá un precio total válido.')
     }
@@ -287,8 +244,8 @@ export default function NuevaReserva({ onExito }) {
       if (capacidadAviso && !await confirmar(`${capacidadAviso} ¿Guardar igualmente como excepción?`)) return
       if ((modoCliente === 'nuevo' || !clienteId) && !await confirmarClienteNuevo(supabase, clienteForm, confirmar)) return
       const pago = conPago ? datosPago(primerPago, operacionRef.current.pago) : null
-      const { data: nuevaId, error: errRes } = await supabase.rpc(cierreId ? 'crear_reserva_dentro_cierre' : 'crear_reserva_con_pago', {
-        ...(cierreId ? { p_cierre_id: cierreId, p_cierres: cierresAutorizados } : {}),
+      const { data: nuevaId, error: errRes } = await supabase.rpc(cierreParaReserva ? 'crear_reserva_dentro_cierre' : 'crear_reserva_con_pago', {
+        ...(cierreParaReserva ? { p_cierre_id: cierreParaReserva, p_cierres: cierresAutorizados } : {}),
         p_reserva: {
           id: operacionRef.current.reserva,
           propiedad_id:    propId,
@@ -313,7 +270,7 @@ export default function NuevaReserva({ onExito }) {
         p_pago: pago,
       })
 
-      if (errRes?.code === 'PGRST202' && cierreId) throw new Error('Falta ejecutar la migración 20261003_reserva_dentro_cierre.sql en Supabase. No se modificaron las fechas.')
+      if (errRes?.code === 'PGRST202' && cierreParaReserva) throw new Error('Falta ejecutar la migración 20261011_reserva_cierre_noches_libres.sql en Supabase. No se modificaron las fechas.')
       if (errRes) throw new Error('Error creando reserva: ' + errRes.message)
 
       onExito?.(nuevaId)
@@ -330,6 +287,8 @@ export default function NuevaReserva({ onExito }) {
   }
 
   function resetForm() {
+    setCierresAutorizados([])
+    setAutorizaCierres(false)
     setPaso(0)
     setPropId('')
     setCheckin('')
@@ -443,6 +402,7 @@ export default function NuevaReserva({ onExito }) {
       {/* ── PASO 1: Cliente ────────────────────────────────────────────────── */}
       {paso === 1 && (
         <Seccion titulo="Datos del cliente">
+          {cierresAutorizados.length > 0 && <p role="status" className="cobros cobros-aviso reserva-cierre-aviso">Estas fechas incluyen cierres preventivos importados. Antes de guardar deberás confirmar que no corresponden a otros huéspedes.</p>}
           {clienteError && <div role="alert" style={s.errorBox}>{clienteError}</div>}
 
           {modoCliente !== 'seleccionado' && modoCliente !== 'nuevo' && (
@@ -575,13 +535,13 @@ export default function NuevaReserva({ onExito }) {
       {/* ── PASO 2: Confirmar ──────────────────────────────────────────────── */}
       {paso === 2 && (
         <Seccion titulo="Confirmar reserva">
-          {cierreId && <div className="cobros cobros-aviso reserva-cierre-aviso">
+          {cierreParaReserva && <div className="cobros cobros-aviso reserva-cierre-aviso">
             <p>Reserva directa: {formatFecha(checkin)} → {formatFecha(checkout)}.</p>
             {cierreOrigen?.checkin < checkin && <p>Seguirá cerrado: {formatFecha(cierreOrigen.checkin)} → {formatFecha(checkin)}.</p>}
             {checkout < cierreOrigen?.checkout && <p>Seguirá cerrado: {formatFecha(checkout)} → {formatFecha(cierreOrigen.checkout)}.</p>}
             <ul>{cierresAutorizados.map(c => <li key={c.id}>{c.canal_origen} · {formatFecha(c.checkin)} → {formatFecha(c.checkout)}</li>)}</ul>
             <label className="cobros-check"><input type="checkbox" checked={autorizaCierres} onChange={e => { setAutorizaCierres(e.target.checked); setGuardError('') }} />Verifiqué que son cierres preventivos y no reservas de otros huéspedes.</label>
-            <p>Booking y Airbnb no se modifican. No hace falta volver a sincronizar.</p>
+            <p>Las noches fuera de esta reserva seguirán cerradas. Booking y Airbnb no se modifican.</p>
           </div>}
           {capacidadAviso && <p role="alert" className="cobros-aviso">{capacidadAviso}</p>}
 

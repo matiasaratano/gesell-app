@@ -45,9 +45,10 @@ function match(row,u) {
     if(table==='crear_reserva_dentro_cierre') {
      assert.equal(body.p_cierre_id,'cierre-prueba');
      assert.equal(body.p_cierres.length,1);
-     assert.equal(body.p_reserva.canal_origen,'directo');
-     assert.equal(body.p_reserva.checkin,'2027-01-08');
-     assert.equal(body.p_reserva.checkout,'2027-01-12');
+     const normal=body.p_reserva.checkin==='2027-01-18';
+     assert.equal(body.p_reserva.canal_origen,normal?'whatsapp':'directo');
+     assert.equal(body.p_reserva.checkin,normal?'2027-01-18':'2027-01-08');
+     assert.equal(body.p_reserva.checkout,normal?'2027-01-22':'2027-01-12');
      writes.push({table,method:req.method()});
      rows.push({...body.p_reserva,clientes:clients[0],propiedades:properties[0]});
      return route.fulfill({json:body.p_reserva.id});
@@ -333,6 +334,35 @@ function match(row,u) {
   await page.getByRole('button',{name:/Crear reserva/}).click();
   await page.waitForURL(/\/reservas\//);
   assert.equal(writes.length,countWrites+1);
+  // The ordinary creation flow supports closures plus adjacent free nights.
+  await page.goto(base+'/nueva?propiedad_id=p1&checkin=2027-01-18&checkout=2027-01-22');
+  await page.getByRole('button',{name:/Verificar disponibilidad/}).click();
+  await page.getByText(/Estas fechas incluyen cierres preventivos importados/).waitFor();
+  const avisoCierre=await page.getByText(/Estas fechas incluyen cierres preventivos importados/).boundingBox();
+  const etiquetaCliente=await page.getByText('Buscar cliente existente',{exact:true}).boundingBox();
+  assert.ok(etiquetaCliente.y-(avisoCierre.y+avisoCierre.height)>=16,'El aviso debe quedar separado del buscador');
+  await page.screenshot({path:`${output}/${width}-aviso-cierre-cliente.png`,fullPage:true});
+  await page.getByPlaceholder('Nombre, apellido o DNI…').fill('Valeria');
+  await page.getByRole('button',{name:/Valeria Prueba.*DNI/}).click();
+  await page.getByRole('button',{name:/Continuar/}).click();
+  await page.getByPlaceholder('0',{exact:true}).fill('100000');
+  const beforeNormal=writes.length;
+  await page.getByRole('button',{name:/Crear reserva/}).click();
+  await page.getByText('Confirmá que los cierres son preventivos antes de guardar.').waitFor();
+  assert.equal(writes.length,beforeNormal);
+  await page.getByRole('checkbox',{name:/Verifiqué que son cierres preventivos/}).check();
+  await page.screenshot({path:`${output}/${width}-nueva-reserva-cierres.png`,fullPage:true});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+  await page.getByRole('button',{name:/Crear reserva/}).click();
+  await page.waitForURL(/\/reservas\//);
+  assert.equal(writes.length,beforeNormal+1);
+  // Real reservations and manual closures cannot be overridden.
+  for(const query of ['propiedad_id=p1&checkin=2027-01-08&checkout=2027-01-09','propiedad_id=p2&checkin=2026-09-28&checkout=2026-09-29']) {
+   await page.goto(base+'/nueva?'+query);
+   await page.getByRole('button',{name:/Verificar disponibilidad/}).click();
+   await page.getByText(/Sin disponibilidad: hay una reserva o un cierre gestionado/).waitFor();
+   assert.equal(await page.getByPlaceholder('Nombre, apellido o DNI…').count(),0);
+  }
   assert.deepEqual(errors,[]);
   console.log(JSON.stringify({width,errors,dialogs,mockedWrites:writes.length}));await context.close();
  }
