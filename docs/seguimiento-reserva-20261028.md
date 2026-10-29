@@ -21,14 +21,16 @@ El disparador cubre otros caminos que insertan pagos, incluida Nueva reserva.
 ## Recorrido
 
 1. Cotizar por WhatsApp como hasta ahora, sin guardar cada consulta.
-2. Cuando acuerdan la reserva, crearla pendiente con fechas, cliente y precio.
-   Las fechas quedan ocupadas aunque todavia no exista un pago.
-3. Desde la ficha, preparar el detalle o marcar Ya lo envie si se mando afuera.
+2. Preparar el detalle de pago desde Mensajes, antes de dar de alta la reserva.
+3. Una vez recibida la sena, crear la reserva y registrar el pago recibido.
+   Se conserva la opcion de reserva pendiente para las excepciones: ocupa fechas.
 4. Registrar sena y confirmar realiza ambas operaciones juntas. Un error revierte
    la operacion; un reintento no duplica el pago.
 5. Preparar el voucher y marcarlo enviado desde la ficha o desde el mensaje guardado.
 
 Al asignar un cliente a una reserva pendiente, Guardar abre el cobro si ya tiene
 precio; se puede cerrar sin registrar nada. Si falta precio, lleva a Pagos.
-El resumen de pasos no obliga a completar pantallas en orden ni crea cotizaciones.
+La ficha muestra datos, importes y una proxima accion, sin repetir cotizacion ni
+detalle previo al pago. El voucher usa la misma plantilla que Mensajes y permite
+marcar un envio manual. Las versiones ya guardadas se conservan sin cambios.
 Booking/Airbnb conservan su gestion manual y sus condiciones de cobro.

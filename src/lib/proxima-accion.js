@@ -16,8 +16,7 @@ export function proximaAccion(r, pagos = [], mensajes = null, hoy = hoyLocal()) 
   if (r.checkin <= hoy && r.modalidad !== 'mensual' && cobro.saldo > 0) return { texto: 'Revisar el saldo pendiente de la estadía', accion: 'pagos', boton: 'Ver cobros' }
   if (['confirmada', 'finalizada'].includes(r.estado) && cobro.recibido > 0 && !r.voucher_enviado_el && mensajes && !mensajes.some(m => m.tipo === 'voucher' && m.enviado_el)) return { texto: 'El voucher todavía no está marcado como enviado', accion: 'mensaje', tipo: 'voucher', boton: 'Preparar voucher' }
   if (r.estado === 'pendiente' && r.modalidad !== 'mensual' && cobro.requiereSena && r.checkout > hoy && cobro.recibido === 0 && r.canal_origen !== 'booking' && r.canal_origen !== 'airbnb') {
-    if (r.detalle_enviado_el || mensajes?.some(m => m.tipo === 'detalle' && m.enviado_el)) return { texto: 'Detalle enviado · esperando la seña', accion: 'cobrar', abrir: true, boton: 'Registrar seña' }
-    return { texto: 'Preparar el detalle o registrar la seña recibida', accion: 'mensaje', tipo: 'detalle', boton: 'Preparar detalle' }
+    return { texto: 'La reserva está pendiente de seña', accion: 'cobrar', abrir: true, boton: 'Registrar seña' }
   }
   return null
 }

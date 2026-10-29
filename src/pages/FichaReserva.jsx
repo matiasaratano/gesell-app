@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { CRUDReservas } from './Admin'
 import CobrosReserva from '../components/CobrosReserva'
-import { nombreCliente } from '../lib/cobros.js'
+import { dinero, nombreCliente, resumenCobros } from '../lib/cobros.js'
 import { hoyLocal } from '../lib/operacion-reserva.js'
 import { reservaDesdeCierre } from '../lib/calendario-grid.js'
 import { cierreImportadoDisponible } from '../lib/disponibilidad-solicitud.js'
@@ -12,7 +12,6 @@ import { useConfirmacion } from '../lib/confirmacion.js'
 import CancelarReserva from '../components/CancelarReserva'
 import MensajesReserva from '../components/MensajesReserva'
 import { proximaAccion } from '../lib/proxima-accion.js'
-import SeguimientoReserva from '../components/SeguimientoReserva'
 import PagoRapido from '../components/PagoRapido'
 
 const fecha = value => value?.slice(0, 10).split('-').reverse().join('/') || '—'
@@ -59,7 +58,6 @@ function FichaReserva() {
   const [tab, setTab] = useState(['pagos', 'mensaje'].includes(params.get('vista')) ? params.get('vista') : 'datos')
   const [cancelando, setCancelando] = useState(false)
   const [mensajes, setMensajes] = useState(null)
-  const [tipoMensaje, setTipoMensaje] = useState(params.get('tipo') || 'detalle')
   const [cobrar, setCobrar] = useState(false)
   const [editor, setEditor] = useState(null)
   const [recordar, setRecordar] = useState('')
@@ -122,7 +120,7 @@ function FichaReserva() {
       if (paso.abrir) setCobrar(true)
       else setTab('pagos')
     } else {
-      setTipoMensaje(paso.tipo || 'detalle'); setTab(paso.accion)
+      setTab(paso.accion)
     }
   }
   async function reabrir() {
@@ -154,15 +152,18 @@ function FichaReserva() {
   const plataforma = plataformas[reserva.canal_origen]
   const limpia = reserva.limpieza_completada_para === reserva.checkout
   const siguiente = proximaAccion(reserva, pagos, mensajes)
+  const resumen = resumenCobros(reserva, pagos)
+  const voucherDisponible = ['confirmada', 'finalizada'].includes(reserva.estado) && resumen.recibido > 0 && resumen.total !== null && !!reserva.clientes?.nombre
+  const voucherEnviado = !!reserva.voucher_enviado_el || !!mensajes?.some(m => m.tipo === 'voucher' && m.enviado_el)
   return <main className="cobros cobros-page ficha-reserva">
     <header className="ficha-cabecera">
     <h1 className="ficha-titulo">{cerrada ? `Cierre ${manual ? 'manual' : reserva.canal_origen}` : nombreCliente(reserva)}</h1>
     <Link className="cobros-link" to="/calendario">Volver al calendario</Link>
     </header>
-    <p>{reserva.propiedades?.nombre} · {fecha(reserva.checkin)} → {fecha(reserva.checkout)}</p>
-    <p>{reserva.estado} · {manual ? 'Manual' : reserva.canal_origen}</p>
+    <div className="ficha-identificacion"><p>{reserva.propiedades?.nombre} · {fecha(reserva.checkin)} → {fecha(reserva.checkout)}</p><p className={`ficha-estado ficha-estado-${reserva.estado}`}>{reserva.estado} · {manual ? 'Manual' : reserva.canal_origen}</p></div>
     {!cerrada && reserva.estado === 'pendiente' && <p className="reserva-fechas-ocupadas">Fechas ocupadas en el calendario · pendiente de confirmación</p>}
-    <div className="cobros-acciones ficha-acciones"><button className="cobros-primary" onClick={() => setEditor(reserva)}>Editar reserva</button>
+    <div className="cobros-acciones ficha-acciones"><button onClick={() => setEditor(reserva)}>Editar reserva</button>
+      {voucherDisponible && <button onClick={() => setTab('mensaje')}>Ver voucher</button>}
       {!cerrada && <Link className="cobros-link" to={`/recibos?reserva_id=${reserva.id}`}>Recibos de pagos</Link>}
       {plataforma && <a className="cobros-link" href={plataforma.url} target="_blank" rel="noopener noreferrer" title={`Abrir el panel de ${plataforma.nombre} en una pestaña nueva`}>Abrir {plataforma.nombre}</a>}
       {cerrada && (cierreImportadoDisponible({ ...reserva, pagos })
@@ -174,13 +175,14 @@ function FichaReserva() {
     </div>
     {cancelando && <CancelarReserva reserva={reserva} onClose={() => setCancelando(false)} onSaved={() => { setCancelando(false); setMensaje('Reserva cancelada. Se conservaron los registros de pago.'); recargar() }} />}
     {reserva.estado === 'cancelada' && <p className="cobros-aviso">Reserva cancelada{reserva.cancelacion_motivo ? `: ${reserva.cancelacion_motivo}` : ''}. Los pagos registrados se conservan.</p>}
-    <SeguimientoReserva reserva={reserva} pagos={pagos} mensajes={mensajes} onAccion={avanzar} onMarcar={(campo, valor) => actualizar({ [campo]: valor })} disabled={guardando} />
-    {siguiente && <section className="ficha-proxima"><div><small>Próxima acción</small><p>{siguiente.texto}</p></div><button className="cobros-primary" onClick={() => avanzar(siguiente)}>{siguiente.boton}</button></section>}
+    {!cerrada && tab !== 'pagos' && <dl className="ficha-importes" aria-label="Resumen de importes"><div><dt>Total estadía</dt><dd>{resumen.total === null ? 'Sin cargar' : dinero(resumen.total)}</dd></div><div><dt>Recibido</dt><dd>{dinero(resumen.recibido)}</dd></div><div><dt>{reserva.estado === 'cancelada' ? 'Saldo registrado' : 'Saldo pendiente'}</dt><dd>{resumen.saldo === null ? 'Sin calcular' : dinero(resumen.saldo)}</dd></div></dl>}
+    {siguiente && <section className="ficha-proxima"><div><small>Próxima acción</small><p>{siguiente.texto}</p></div><div className="ficha-proxima-acciones"><button className="cobros-primary" onClick={() => avanzar(siguiente)}>{siguiente.boton}</button>{siguiente.tipo === 'voucher' && <button disabled={guardando} onClick={() => actualizar({ voucher_enviado_el: new Date().toISOString() })}>Ya lo envié</button>}</div></section>}
+    {voucherDisponible && voucherEnviado && <p className="ficha-voucher-enviado">Voucher marcado como enviado <button disabled={guardando} onClick={() => mensajes?.some(m => m.tipo === 'voucher' && m.enviado_el) ? setTab('mensaje') : actualizar({ voucher_enviado_el: null })}>{mensajes?.some(m => m.tipo === 'voucher' && m.enviado_el) ? 'Ver envío' : 'Marcar pendiente'}</button></p>}
     {cobrar && <PagoRapido reservaId={id} onClose={() => { setCobrar(false); recargar() }} onSaved={recargar} />}
     {abrir && <div className="cobros-aviso"><p>¿Abrir este cierre manual? Estas fechas quedarán disponibles si no hay otro bloqueo.</p><div className="cobros-acciones"><button disabled={guardando} onClick={reabrir}>Abrir cierre</button><button onClick={() => setAbrir(false)}>Cancelar</button></div></div>}
     {error && <p role="alert" className="cobros-error">{error}</p>}
     {mensaje && <p role="status">{mensaje}</p>}
-    <div className="cobros-tabs" aria-label="Secciones de la reserva">{Object.entries({ datos: 'Datos y tareas', ...(!cerrada ? { pagos: 'Pagos', recordatorio: 'Recordatorio', mensaje: 'WhatsApp' } : {}), historial: 'Historial' }).map(([key, label]) => <button key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}</button>)}</div>
+    <div className="cobros-tabs" aria-label="Secciones de la reserva">{Object.entries({ datos: 'Datos y tareas', ...(!cerrada ? { pagos: 'Pagos', recordatorio: 'Recordatorio', mensaje: 'Voucher' } : {}), historial: 'Historial' }).map(([key, label]) => <button key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}</button>)}</div>
     {tab === 'datos' && <div className="ficha-datos">
       <dl><dt>Cliente</dt><dd>{nombreCliente(reserva)}</dd><dt>Teléfono</dt><dd>{reserva.clientes?.whatsapp || 'Sin teléfono'}</dd><dt>Huéspedes</dt><dd>{reserva.adultos || 0} adultos · {reserva.menores || 0} menores</dd><dt>Tipo de alquiler</dt><dd>{reserva.modalidad === 'mensual' ? 'Largo / mensual' : 'Temporal'}</dd></dl>
       {reserva.notas_internas && <section><h3>Notas internas</h3><p className="ficha-notas">{reserva.notas_internas}</p></section>}
@@ -198,7 +200,7 @@ function FichaReserva() {
       <div className="cobros-acciones"><button className="cobros-primary" disabled={guardando || !recordar || recordar < hoyLocal()} onClick={() => actualizar({ recordar_el: recordar })}>Guardar fecha</button>{reserva.recordar_el && <button disabled={guardando} onClick={() => actualizar({ recordar_el: null })}>Reactivar pendientes</button>}</div>
     </section>}
     {tab === 'pagos' && !cerrada && <CobrosReserva key={id} reserva={reserva} onChange={recargar} mesInicial={params.get('mes') || ''} />}
-    {tab === 'mensaje' && !cerrada && <MensajesReserva key={`${id}-${tipoMensaje}`} reservaId={id} tipoInicial={tipoMensaje} onChange={recargar} />}
+    {tab === 'mensaje' && !cerrada && <>{voucherDisponible && !voucherEnviado && siguiente?.tipo !== 'voucher' && <div className="ficha-voucher-pendiente"><span>Voucher pendiente de envío</span><button disabled={guardando} onClick={() => actualizar({ voucher_enviado_el: new Date().toISOString() })}>Ya lo envié</button></div>}<MensajesReserva key={id} reservaId={id} tipoInicial="voucher" soloVoucher onChange={recargar} /></>}
     {tab === 'historial' && <section><h3>Historial de cambios</h3>{historialError && <p role="alert">{historialError}</p>}{!historialError && !historial.length && <p>No hay cambios registrados todavía.</p>}<ul className="cobros-historial">{historial.map(h => <li key={h.id}><div><small>{new Date(h.registrado_at).toLocaleString('es-AR')} · {h.origen === 'ical' ? 'Sincronización iCal' : h.origen === 'automatico' ? 'Actualización automática' : 'App'}</small><p className="ficha-notas">{cambios(h)}</p></div></li>)}</ul>{historial.length === limite && <button onClick={() => setLimite(n => n + 30)}>Ver cambios anteriores</button>}</section>}
   </main>
 }

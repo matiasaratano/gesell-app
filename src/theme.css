@@ -64,21 +64,35 @@ a { color: var(--ui-primary); }
 .ficha-proxima small { color: #637068; }
 .ficha-proxima p { margin: 4px 0 0; }
 .reserva-fechas-ocupadas { color: #637068; font-size: 13px; }
-.seguimiento-reserva { margin: 16px 0; border-top: 1px solid #dde5df; border-bottom: 1px solid #dde5df; }
-.seguimiento-reserva ol { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); list-style: none; margin: 0; padding: 0; }
-.seguimiento-reserva li { min-width: 0; padding: 12px 10px; border-right: 1px solid #dde5df; }
-.seguimiento-reserva li:last-child { border-right: 0; }
-.seguimiento-etiqueta { display: flex; align-items: center; gap: 8px; font-size: 13px; }
-.seguimiento-etiqueta > span { flex: 0 0 20px; text-align: center; color: #637068; }
-.seguimiento-reserva li.paso-completo .seguimiento-etiqueta { color: #2d5a3d; }
-.seguimiento-reserva p { font-size: 12px; color: #637068; margin: 6px 0; }
-.seguimiento-acciones { display: flex; flex-wrap: wrap; gap: 4px 8px; }
-.seguimiento-acciones button { border: 0; background: transparent; color: #2d5a3d; padding: 4px 0; font-size: 12px; text-decoration: underline; }
-.seguimiento-acciones button:disabled { opacity: .5; }
+.ficha-identificacion { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; margin: 8px 0 16px; }
+.ficha-identificacion p { margin: 0; }
+.ficha-estado { color: #637068; font-size: 13px; }
+.ficha-estado-confirmada { color: #285f42; }
+.ficha-estado-cancelada { color: #991b1b; }
+.ficha-importes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; padding: 16px 0; margin: 0 0 16px; border-block: 1px solid #dde5df; }
+.ficha-importes > div { min-width: 0; }
+.ficha-importes dt { color: #637068; font-size: 13px; margin-bottom: 6px; }
+.ficha-importes dd { margin: 0; font-size: 20px; font-weight: 600; overflow-wrap: anywhere; }
+.ficha-importes > div:nth-child(2) dd { color: #285f42; }
+.ficha-importes > div:nth-child(3) dd { color: #365d87; }
+.ficha-proxima-acciones, .ficha-voucher-pendiente { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ficha-voucher-pendiente { justify-content: space-between; padding: 16px 0; }
+.ficha-voucher-enviado { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; color: #285f42; margin: 12px 0 16px; }
+.ficha-voucher-enviado button { background: transparent; padding: 8px 0; border: 0; text-decoration: underline; color: inherit; }
+.mensajes-reserva { padding-top: 16px; }
+.mensajes-reserva h3 { margin: 0 0 12px; }
+.mensajes-preparacion { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin-bottom: 20px; }
+.mensajes-preparacion label { min-width: 0; max-width: 100%; margin: 0; }
+.mensajes-reserva textarea { display: block; margin-top: 8px; font-family: inherit; font-size: 14px; font-weight: 400; line-height: 1.5; }
+.mensajes-reserva > .cobros-historial { margin: 16px 0; }
 @media (max-width: 600px) {
-  .seguimiento-reserva ol { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .seguimiento-reserva li:nth-child(2) { border-right: 0; }
-  .seguimiento-reserva li:nth-child(-n+2) { border-bottom: 1px solid #dde5df; }
+  .ficha-importes { gap: 10px; }
+  .ficha-importes dd { font-size: 16px; }
+  .ficha-reserva .ficha-acciones { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .ficha-reserva .ficha-acciones > * { min-width: 0; padding: 10px; }
+  .ficha-proxima-acciones { width: 100%; }
+  .mensajes-preparacion { align-items: stretch; }
+  .mensajes-preparacion > * { flex: 1 1 180px; }
 }
 .reserva-cierre-aviso p + p, .reserva-cierre-aviso button { margin-top: 8px; }
 .reserva-cierre-aviso ul { margin: 10px 0; padding-left: 20px; }
