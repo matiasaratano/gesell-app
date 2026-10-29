@@ -30,6 +30,14 @@ test('detalle breve comparte fechas, noches, personas y solo la cuenta del depar
   const manual=detalleSolicitud({...s,datos_cliente:undefined,adultos:undefined},{nombre:'Depto 1'})
   assert.ok(!manual.includes('undefined'));assert.ok(!manual.includes('NaN'))
 })
+test('datos del titular son opcionales en el detalle y no se vuelven a pedir por defecto',()=>{
+  const p={nombre:'Depto 1',alias_cbu:'mi.alias'}
+  assert.doesNotMatch(detalleSolicitud(s,p),/Nombre y apellido:|DNI:/)
+  const combinado=detalleSolicitud(s,p,{pedirDatos:true})
+  for(const texto of ['mi.alias','comprobante','por favor pasame estos datos del titular:','*Titular*','Nombre y apellido:','DNI:','Teléfono:','Email:','Domicilio y localidad:','*Acompañantes (nombre, apellido y DNI)*'])assert.ok(combinado.includes(texto))
+  assert.ok(combinado.endsWith('La reserva se confirma al verificar la seña.'))
+  assert.doesNotMatch(combinado,/antes de transferir.*complet|completar.*antes de pagar/)
+})
 test('el detalle de solicitud pide 30% sin prometer fechas bloqueadas',()=>{
  const texto=detalleSolicitud(s,{nombre:'Depto 1',alias_cbu:'mi.alias'})
  assert.match(texto,/30%/);assert.match(texto,/300/);assert.match(texto,/700/)

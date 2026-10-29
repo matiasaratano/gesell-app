@@ -135,13 +135,13 @@ function FichaReserva() {
     if (guardando || eliminando.current) return
     eliminando.current = true
     try {
-      if (!await confirmar('¿Eliminar esta reserva y todos sus registros de pago? Esta acción no se puede deshacer y no devuelve dinero al cliente.')) return
+      if (!await confirmar('¿Eliminar esta reserva sin movimientos? Esta acción no se puede deshacer. Las reservas con pagos o mensajes guardados deben cancelarse para conservar sus registros.')) return
       setGuardando(true); setError('')
       const { error: err } = await supabase.rpc('eliminar_reserva_segura', { p_reserva_id: id })
       if (err) throw err
       navigate('/calendario')
-    } catch {
-      setError('No se eliminó la reserva ni sus pagos. Intentá nuevamente.')
+    } catch (e) {
+      setError(`No se eliminó la reserva. ${e.message || 'Intentá nuevamente.'}`)
     } finally { eliminando.current = false; setGuardando(false) }
   }
   if (loading) return <main className="cobros cobros-page"><p role="status">Cargando reserva…</p></main>
@@ -199,7 +199,7 @@ function FichaReserva() {
       <div className="pago-fields"><label>Recordar el<input type="date" min={hoyLocal()} value={recordar} onChange={e => setRecordar(e.target.value)} /></label></div>
       <div className="cobros-acciones"><button className="cobros-primary" disabled={guardando || !recordar || recordar < hoyLocal()} onClick={() => actualizar({ recordar_el: recordar })}>Guardar fecha</button>{reserva.recordar_el && <button disabled={guardando} onClick={() => actualizar({ recordar_el: null })}>Reactivar pendientes</button>}</div>
     </section>}
-    {tab === 'pagos' && !cerrada && <CobrosReserva key={id} reserva={reserva} onChange={recargar} mesInicial={params.get('mes') || ''} />}
+    {tab === 'pagos' && !cerrada && <CobrosReserva key={id} reserva={reserva} revision={revision} onChange={recargar} mesInicial={params.get('mes') || ''} />}
     {tab === 'mensaje' && !cerrada && <>{voucherDisponible && !voucherEnviado && siguiente?.tipo !== 'voucher' && <div className="ficha-voucher-pendiente"><span>Voucher pendiente de envío</span><button disabled={guardando} onClick={() => actualizar({ voucher_enviado_el: new Date().toISOString() })}>Ya lo envié</button></div>}<MensajesReserva key={id} reservaId={id} tipoInicial="voucher" soloVoucher onChange={recargar} /></>}
     {tab === 'historial' && <section><h3>Historial de cambios</h3>{historialError && <p role="alert">{historialError}</p>}{!historialError && !historial.length && <p>No hay cambios registrados todavía.</p>}<ul className="cobros-historial">{historial.map(h => <li key={h.id}><div><small>{new Date(h.registrado_at).toLocaleString('es-AR')} · {h.origen === 'ical' ? 'Sincronización iCal' : h.origen === 'automatico' ? 'Actualización automática' : 'App'}</small><p className="ficha-notas">{cambios(h)}</p></div></li>)}</ul>{historial.length === limite && <button onClick={() => setLimite(n => n + 30)}>Ver cambios anteriores</button>}</section>}
   </main>

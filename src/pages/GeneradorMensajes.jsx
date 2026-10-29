@@ -3,6 +3,8 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { leerListado } from '../lib/listados.js'
 import MensajesReserva from '../components/MensajesReserva'
+import { avisoCapacidad } from '../lib/capacidad.js'
+import { useConfirmacion } from '../lib/confirmacion.js'
 import { detalleSolicitud, voucherSolicitud, datosVoucherReserva, fechaSolicitud, rangoFechas } from '../lib/solicitudes.js'
 
 const voucherVacio = () => ({titular:'',checkin:'',checkout:'',adultos:'2',menores:'0',total:'',pagado:'',verificado:false})
@@ -33,8 +35,8 @@ const sinTildes = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]
 // ─── Generadores de texto ─────────────────────────────────────────────────────
 function genCotizacion(p, { cotDesde, cotHasta, cotPxn, cotPersonas }) {
   const n       = calcNoches(cotDesde, cotHasta)
-  const total   = n * Number(cotPxn || 0)
-  const sena    = Math.round(total * SENA)
+  const total   = Math.round(n * Number(cotPxn || 0) * 100) / 100
+  const sena    = Math.round(total * SENA * 100) / 100
   const capac   = p.capacidad_desc || (p.capacidad_max ? `hasta ${p.capacidad_max} personas` : '')
   const equipo  = listaEquipamiento(p.equipamiento)
   // Fotos si hay; si no, la web (solo para Departamentos Norte)
@@ -59,7 +61,7 @@ function genCotizacion(p, { cotDesde, cotHasta, cotPxn, cotPersonas }) {
     '• No se permiten fiestas ni eventos',
     p.restriccion_vehiculos ? '• No se puede ingresar con vehículos al predio (motos, cuatriciclos, etc.)' : null,
     '',
-    'Si te interesa, te paso la ficha para avanzar con la reserva.',
+    'Si te interesa, te paso los datos para abonar la seña.',
     'Saludos, Matías',
   ])
 }
@@ -82,12 +84,12 @@ function genFicha(p) {
     `*${label} (nombre, apellido y DNI)*`,
     ...Array.from({ length: acomp }, (_, i) => `${i + 1}.`),
     '',
-    'Completar la ficha no confirma la reserva ni bloquea las fechas. Una vez que la reciba, reviso la disponibilidad y te envío los datos para abonar la seña.',
+    'Podés enviarme estos datos junto con el comprobante de pago. La reserva se confirma al verificar la seña.',
   ])
 }
 
-function genDetalle(p, { detCheckin, detCheckout, detTotal }) {
-  return detalleSolicitud({checkin:detCheckin,checkout:detCheckout,precio_total:detTotal},p)
+function genDetalle(p, { detCheckin, detCheckout, detTotal, detPersonas, pedirDatos }) {
+  return detalleSolicitud({checkin:detCheckin,checkout:detCheckout,precio_total:detTotal,adultos:detPersonas || undefined},p,{pedirDatos})
 }
 
 function genNoDisponible(p, { ndDesde, ndHasta }) {
@@ -136,6 +138,7 @@ function problemasVoucher(v) {
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 export default function GeneradorMensajes() {
+  const confirmar = useConfirmacion()
   const [params, setParams] = useSearchParams()
   const reservaVinculada = params.get('reserva_id') || ''
   const [opcionesReserva, setOpcionesReserva] = useState([])
@@ -147,8 +150,11 @@ export default function GeneradorMensajes() {
   }, [])
   const [tab,        setTabState]  = useState('cotizacion')
   const [props,      setProps]     = useState([])
+  const [errorProps, setErrorProps] = useState('')
+  const [revisionProps, setRevisionProps] = useState(0)
   const [propId,     setPropId]    = useState('')
   const [resultado,  setResultado] = useState('')
+  const [versionResultado, setVersionResultado] = useState('')
   const [waLink,     setWaLink]    = useState('')
   const [toast,      setToast]     = useState('')
 
@@ -162,6 +168,9 @@ export default function GeneradorMensajes() {
   const [detCheckin, setDetCheckin] = useState('')
   const [detCheckout,setDetCheckout]= useState('')
   const [detTotal,   setDetTotal]   = useState('')
+  const [detPersonas, setDetPersonas] = useState('')
+  const [detalleEditado, setDetalleEditado] = useState(false)
+  const [pedirDatos, setPedirDatos] = useState(true)
 
   // Voucher
   const [voucher,            setVoucher]            = useState(voucherVacio)
@@ -251,24 +260,33 @@ export default function GeneradorMensajes() {
   const [ndHasta, setNdHasta] = useState('')
 
   useEffect(() => {
+    let activo = true
     supabase.from('propiedades').select('*').eq('activa', true).order('nombre')
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (!activo) return
+        if (error) throw error
+        setErrorProps('')
         setProps(data ?? [])
-        if (data?.length > 0) setPropId(data[0].id)
-      })
-  }, [])
+        if (data?.length > 0) setPropId(actual => actual || data[0].id)
+      }).catch(() => { if (activo) setErrorProps('No se pudieron cargar los alojamientos.') })
+    return () => { activo = false }
+  }, [revisionProps])
 
   const propiedad = props.find(p => p.id === propId) ?? null
+  const firmaResultado = JSON.stringify({tab,propiedad,cotDesde,cotHasta,cotPxn,cotPersonas,detCheckin,detCheckout,detTotal,detPersonas,pedirDatos,voucher,ndDesde,ndHasta})
+  const resultadoActual = versionResultado === firmaResultado ? resultado : ''
+  const personasActuales = tab === 'cotizacion' ? cotPersonas : tab === 'detalle' ? detPersonas : ''
+  const capacidadAviso = personasActuales ? avisoCapacidad(propiedad,{adultos:personasActuales,menores:0}) : ''
 
   // Resumen cotización
   const cotN     = calcNoches(cotDesde, cotHasta)
-  const cotTotal = cotN * Number(cotPxn || 0)
-  const cotSena  = Math.round(cotTotal * SENA)
+  const cotTotal = Math.round(cotN * Number(cotPxn || 0) * 100) / 100
+  const cotSena  = Math.round(cotTotal * SENA * 100) / 100
 
   // Resumen detalle
   const detN     = calcNoches(detCheckin, detCheckout)
   const detTot   = Number(detTotal || 0)
-  const detSena  = Math.round(detTot * SENA)
+  const detSena  = Math.round(detTot * SENA * 100) / 100
   const detSaldo = detTot - detSena
 
   function showToast(msg) {
@@ -277,23 +295,37 @@ export default function GeneradorMensajes() {
   }
 
   function cambiarTab(t) {
+    if (t === 'detalle' && !detalleEditado && cotN > 0 && Number.isFinite(cotTotal) && cotTotal > 0) copiarCotizacionAlDetalle()
     setTabState(t)
     setResultado('')
     setWaLink('')
   }
 
-  function generar() {
+  function copiarCotizacionAlDetalle() {
+    setDetCheckin(cotDesde); setDetCheckout(cotHasta); setDetTotal(String(cotTotal)); setDetPersonas(cotPersonas)
+    setDetalleEditado(false)
+  }
+
+  function prepararSena() {
+    if (cotN <= 0 || !Number.isFinite(cotTotal) || cotTotal <= 0) { showToast('Completá fechas y precio de la cotización.'); return }
+    copiarCotizacionAlDetalle()
+    cambiarTab('detalle')
+  }
+
+  async function generar() {
     if (tab !== 'derivacion' && !propiedad) {
       showToast('Seleccioná una propiedad')
       return
     }
-    if (tab === 'cotizacion' && (!cotDesde || !cotHasta || cotN <= 0 || Number(cotPxn) <= 0)) {
+    if (tab === 'cotizacion' && (!cotDesde || !cotHasta || cotN <= 0 || !Number.isFinite(Number(cotPxn)) || Number(cotPxn) <= 0)) {
       showToast('Completá fechas válidas y un precio por noche mayor a cero.'); return
     }
-    if (tab === 'detalle' && (!detCheckin || !detCheckout || detN <= 0 || Number(detTotal) <= 0)) {
+    if (tab === 'detalle' && (!detCheckin || !detCheckout || detN <= 0 || !Number.isFinite(Number(detTotal)) || Number(detTotal) <= 0)) {
       showToast('Completá fechas válidas y un precio total mayor a cero.'); return
     }
     if (tab === 'detalle' && !propiedad.alias_cbu) { showToast('Completá el alias de cobro del departamento en Admin.'); return }
+    if (personasActuales && (!Number.isInteger(Number(personasActuales)) || Number(personasActuales) < 1)) { showToast('Ingresá una cantidad de personas válida, sin decimales.'); return }
+    if (capacidadAviso && !await confirmar(`${capacidadAviso} ¿Generar el mensaje igualmente como excepción?`, {titulo:'Revisar capacidad',aceptar:'Generar igualmente'})) return
     if (tab === 'nodisponible' && ndDesde && ndHasta && calcNoches(ndDesde, ndHasta) <= 0) {
       showToast('La fecha "hasta" tiene que ser posterior a "desde".'); return
     }
@@ -308,7 +340,7 @@ export default function GeneradorMensajes() {
     } else if (tab === 'ficha') {
       txt = genFicha(propiedad)
     } else if (tab === 'detalle') {
-      txt = genDetalle(propiedad, { detCheckin, detCheckout, detTotal })
+      txt = genDetalle(propiedad, { detCheckin, detCheckout, detTotal, detPersonas, pedirDatos })
     } else if (tab === 'voucher') {
       txt = voucherSolicitud({estado:'confirmada',clientes:{nombre:voucher.titular.trim()},propiedades:propiedad,checkin:voucher.checkin,checkout:voucher.checkout,adultos:Number(voucher.adultos),menores:Number(voucher.menores),precio_total:Number(voucher.total),pagos:[{confirmado:true,monto:Number(voucher.pagado)}]})
     } else if (tab === 'nodisponible') {
@@ -319,16 +351,17 @@ export default function GeneradorMensajes() {
       setWaLink(r.link)
     }
     setResultado(txt)
+    setVersionResultado(firmaResultado)
   }
 
   function copiar() {
-    if (!resultado.trim()) { showToast('Generá una plantilla primero'); return }
-    navigator.clipboard.writeText(resultado).then(() => showToast('¡Copiado!')).catch(() => showToast('No se pudo copiar. Revisá el permiso del navegador.'))
+    if (!resultadoActual.trim()) { showToast('Generá una plantilla con los datos actuales'); return }
+    navigator.clipboard.writeText(resultadoActual).then(() => showToast('¡Copiado!')).catch(() => showToast('No se pudo copiar. Revisá el permiso del navegador.'))
   }
 
   function abrirWA() {
-    if (!resultado.trim()) { showToast('Generá una plantilla primero'); return }
-    window.open('https://wa.me/?text=' + encodeURIComponent(resultado))
+    if (!resultadoActual.trim()) { showToast('Generá una plantilla con los datos actuales'); return }
+    window.open('https://wa.me/?text=' + encodeURIComponent(resultadoActual))
   }
 
   const mostrarDepto = tab !== 'derivacion'
@@ -340,6 +373,7 @@ export default function GeneradorMensajes() {
         <h1 style={s.h1}>Mensajes</h1>
         <span style={s.headerSub}>Departamentos Norte</span>
       </header>
+      {errorProps && <div className="cobros cobros-error" role="alert">{errorProps} <button onClick={()=>setRevisionProps(n=>n+1)}>Reintentar</button></div>}
       <div className="cobros" style={{ marginBottom: 16 }}><label>Usar datos de una reserva<select value={reservaVinculada} onChange={e => setParams(e.target.value ? { reserva_id: e.target.value } : {})}><option value="">Carga manual de plantillas</option>{opcionesReserva.map(r => <option key={r.id} value={r.id}>{[r.clientes?.nombre, r.clientes?.apellido].filter(Boolean).join(' ') || 'Sin cliente'} · {r.propiedades?.nombre} · {fechaSolicitud(r.checkin)}</option>)}</select></label>{errorReservas && <p role="alert">{errorReservas}</p>}</div>
       {reservaVinculada ? <><Link to={`/reservas/${reservaVinculada}`}>Ver reserva</Link><MensajesReserva key={reservaVinculada} reservaId={reservaVinculada} tipoInicial={params.get('tipo')} /></> : <>
 
@@ -425,17 +459,19 @@ export default function GeneradorMensajes() {
           <div style={s.cardLabel}>Datos de la reserva</div>
           <div style={s.row2}>
             <Campo label="Check-in">
-              <input type="date" style={s.input} value={detCheckin} onChange={e => setDetCheckin(e.target.value)} />
+              <input type="date" style={s.input} value={detCheckin} onChange={e => { setDetCheckin(e.target.value); setDetalleEditado(true) }} />
             </Campo>
             <Campo label="Check-out">
-              <input type="date" style={s.input} value={detCheckout} onChange={e => setDetCheckout(e.target.value)} />
+              <input type="date" style={s.input} value={detCheckout} onChange={e => { setDetCheckout(e.target.value); setDetalleEditado(true) }} />
             </Campo>
           </div>
-          <div style={{ marginTop: 10 }}>
+          <div style={{ ...s.row2, marginTop: 10 }}>
             <Campo label="Costo total ($)">
-              <input type="number" style={s.input} placeholder="0" value={detTotal} onChange={e => setDetTotal(e.target.value)} />
+              <input type="number" style={s.input} placeholder="0" value={detTotal} onChange={e => { setDetTotal(e.target.value); setDetalleEditado(true) }} />
             </Campo>
+            <Campo label="Personas"><input type="number" style={s.input} min={1} step={1} value={detPersonas} onChange={e => { setDetPersonas(e.target.value); setDetalleEditado(true) }} /></Campo>
           </div>
+          <label className="mensaje-pedir-datos"><input type="checkbox" checked={pedirDatos} onChange={e=>setPedirDatos(e.target.checked)} />Pedir datos del titular y acompañantes</label>
           {(detN > 0 || detTot > 0) && (
             <div style={s.summary}>
               <SItem label="Noches" val={detN || '–'} />
@@ -543,16 +579,17 @@ export default function GeneradorMensajes() {
         </div>
       )}
 
+      {capacidadAviso && <p role="alert" className="mensaje-aviso">{capacidadAviso}</p>}
       {/* Botón generar */}
       <button style={s.btnPrimary} onClick={generar}>✦ Generar plantilla</button>
 
       {/* Resultado */}
-      <div style={{ ...s.card, padding: 0, overflow: 'hidden' }}>
+      <div className="mensaje-resultado">
         <textarea
           aria-label="Plantilla generada"
           style={s.textarea}
-          value={resultado}
-          onChange={e => setResultado(e.target.value)}
+          value={resultadoActual}
+          onChange={e => { setResultado(e.target.value); setVersionResultado(firmaResultado) }}
           placeholder="La plantilla generada aparecerá aquí…"
         />
       </div>
@@ -560,9 +597,9 @@ export default function GeneradorMensajes() {
       {/* Botones de acción */}
       {tab !== 'derivacion' ? (
         <div style={s.btnRow}>
-          <button style={s.btnSecondary} onClick={copiar}>📋 Copiar texto</button>
-          <button style={{ ...s.btnSecondary, ...s.btnWA }} onClick={abrirWA}>📲 WhatsApp</button>
-          <div />
+          <button style={s.btnSecondary} disabled={!resultadoActual.trim()} onClick={copiar}>📋 Copiar texto</button>
+          <button style={{ ...s.btnSecondary, ...s.btnWA }} disabled={!resultadoActual.trim()} onClick={abrirWA}>📲 WhatsApp</button>
+          {tab === 'cotizacion' && <button style={s.btnSecondary} disabled={cotN <= 0 || !cotTotal} onClick={prepararSena}>Preparar seña</button>}
         </div>
       ) : (
         <div style={s.btnRow}>
@@ -603,7 +640,7 @@ function SItem({ label, val }) {
 // ─── Estilos fieles al original ───────────────────────────────────────────────
 const s = {
   page: {
-    maxWidth: 720,
+    maxWidth: 880,
     margin: '0 auto',
     padding: '24px 16px 48px',
     fontFamily: 'var(--ui-font)',
@@ -628,10 +665,11 @@ const s = {
   headerSub: { fontSize: 13, color: '#7a7570', fontWeight: 300 },
 
   card: {
-    background: '#ffffff',
-    border: '1px solid #e0dbd3',
-    borderRadius: 10,
-    padding: 20,
+    background: 'transparent',
+    border: 'none',
+    borderBottom: '1px solid #dce2de',
+    borderRadius: 0,
+    padding: '16px 0',
     marginBottom: 16,
   },
   cardLabel: {
@@ -756,7 +794,7 @@ const s = {
     boxSizing: 'border-box',
   },
 
-  btnRow: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 10 },
+  btnRow: { display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 },
   btnSecondary: {
     padding: 11,
     background: 'transparent',
@@ -766,9 +804,10 @@ const s = {
     fontFamily: 'inherit',
     fontSize: 13,
     fontWeight: 500,
+    flex: '1 1 160px',
     cursor: 'pointer',
   },
-  btnWA: { borderColor: '#25d366', color: '#25d366' },
+  btnWA: { borderColor: '#78a087', color: '#285f42' },
 
   toast: {
     position: 'fixed',

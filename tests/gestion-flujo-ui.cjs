@@ -97,6 +97,8 @@ function matches(r,u){return [...u.searchParams].every(([k,v])=>{
   await page.getByRole('combobox',{name:'Usar datos de una reserva'}).selectOption('');
   await page.getByRole('button',{name:'💬 Cotización',exact:true}).waitFor();
   await page.goto(base+'/reservas/r1');
+  await page.getByRole('button',{name:'Pagos',exact:true}).click();
+  await page.getByRole('button',{name:'Registrar pago',exact:true}).waitFor();
   await page.getByRole('button',{name:'Cancelar reserva',exact:true}).click();
   const cancel=page.getByRole('dialog',{name:'Cancelar reserva',exact:true});
   await cancel.getByLabel('Motivo',{exact:true}).fill('Cambio de planes del huésped');
@@ -137,6 +139,7 @@ function matches(r,u){return [...u.searchParams].every(([k,v])=>{
   assert.equal(intentosCobro[0].p_confirmar,true);assert.equal(intentosCobro[0].p_pago.id,intentosCobro[1].p_pago.id);
   assert.equal(pendiente.estado,'confirmada');assert.equal(pagos.length,2);
   await cobro.getByRole('button',{name:'Cerrar',exact:true}).click();
+  await page.locator('.cobros-totales').getByText(/\$\s*300$/).waitFor();
   await page.locator('.ficha-proxima').getByRole('button',{name:'Ya lo envié',exact:true}).click();
   await page.locator('.ficha-voucher-enviado').getByText('Voucher marcado como enviado',{exact:false}).waitFor();
   assert.ok(pendiente.voucher_enviado_el);

@@ -251,12 +251,12 @@ function match(row,u) {
    const directConfirm=page.getByRole('dialog',{name:'Confirmar eliminación'});
    const writesBefore=writes.length;
    await deleteDirect.click();await directConfirm.waitFor();
-   await directConfirm.getByText(/todos sus registros de pago/).waitFor();
+   await directConfirm.getByText(/reservas con pagos o mensajes guardados deben cancelarse/).waitFor();
    await directConfirm.getByRole('button',{name:'Cancelar',exact:true}).click();
    assert.equal(writes.length,writesBefore);
    failDelete=true;
    await deleteDirect.click();await directConfirm.getByRole('button',{name:'Eliminar',exact:true}).click();
-   await page.getByRole('alert').filter({hasText:'No se eliminó la reserva ni sus pagos'}).waitFor();
+   await page.getByRole('alert').filter({hasText:'No se eliminó la reserva. Fallo simulado al eliminar'}).waitFor();
    assert.ok(rows.some(r=>r.id==='r1'));
    failDelete=false;
    await deleteDirect.click();await directConfirm.getByRole('button',{name:'Eliminar',exact:true}).click();

@@ -29,7 +29,7 @@ export function solicitudesAccionables(rows, propiedadId = '') {
     .sort((a, b) => a.checkin.localeCompare(b.checkin) || a.id.localeCompare(b.id))
 }
 
-export function detalleSolicitud(s, propiedad) {
+export function detalleSolicitud(s, propiedad, { pedirDatos = false } = {}) {
   if (!propiedad || !Number.isFinite(Number(s.precio_total)) || Number(s.precio_total) <= 0) throw new Error('Asigná un departamento y un precio antes de preparar la seña.')
   const total = Number(s.precio_total)
   const sena = Math.round(total * 30) / 100
@@ -55,7 +55,20 @@ export function detalleSolicitud(s, propiedad) {
     propiedad.alias_cbu ? `Alias: ${propiedad.alias_cbu}` : null,
     cuentaPropia ? 'CUIT/CUIL: 23-35727388-9' : null,
     '',
-    'Cuando hayas hecho el pago, podés enviar el comprobante por acá y confirmamos la reserva.',
+    ...(!pedirDatos ? ['Cuando hayas hecho el pago, podés enviar el comprobante por acá y confirmamos la reserva.'] : [
+      'Con el comprobante, por favor pasame estos datos del titular:',
+      '',
+      '*Titular*',
+      'Nombre y apellido:',
+      'DNI:',
+      'Teléfono:',
+      'Email:',
+      'Domicilio y localidad:',
+      '',
+      '*Acompañantes (nombre, apellido y DNI)*',
+      '',
+      'Podés enviarme estos datos junto con el comprobante de pago. La reserva se confirma al verificar la seña.',
+    ]),
   ])
 }
 

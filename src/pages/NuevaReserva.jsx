@@ -164,15 +164,21 @@ export default function NuevaReserva({ onExito }) {
   // ── PASO 2: buscar clientes ─────────────────────────────────────────────────
   useEffect(() => {
     if (busqueda.length < 2) { setClientesRes([]); return }
+    let activo = true
     const t = setTimeout(async () => {
-      const { data } = await supabase
-        .from('clientes')
-        .select('id, nombre, apellido, dni, whatsapp, email, ciudad')
-        .or(`nombre.ilike.%${busqueda}%,apellido.ilike.%${busqueda}%,dni.ilike.%${busqueda}%`)
-        .limit(6)
-      setClientesRes(data ?? [])
+      try {
+        const { data, error } = await supabase
+          .from('clientes')
+          .select('id, nombre, apellido, dni, whatsapp, email, domicilio, ciudad')
+          .or(`nombre.ilike.%${busqueda}%,apellido.ilike.%${busqueda}%,dni.ilike.%${busqueda}%`)
+          .limit(6)
+        if (error) throw error
+        if (activo) { setClientesRes(data ?? []); setClienteError('') }
+      } catch {
+        if (activo) { setClientesRes([]); setClienteError('No se pudieron buscar los clientes. Reintentá la búsqueda.') }
+      }
     }, 300)
-    return () => clearTimeout(t)
+    return () => { activo = false; clearTimeout(t) }
   }, [busqueda])
 
   function seleccionarCliente(c) {
@@ -183,7 +189,7 @@ export default function NuevaReserva({ onExito }) {
       dni:      c.dni      ?? '',
       email:    c.email    ?? '',
       whatsapp: c.whatsapp ?? '',
-      domicilio:'',
+      domicilio:c.domicilio ?? '',
       ciudad:   c.ciudad   ?? '',
     })
     setModoCliente('seleccionado')
@@ -205,7 +211,7 @@ export default function NuevaReserva({ onExito }) {
     setParseStatus(null)
     try {
       const parsed = await extraerFicha(fichaTexto)
-      if (parsed.nombre) setClienteForm(f => ({ ...f, nombre: parsed.nombre }))
+      if (parsed.nombre) setClienteForm(f => ({ ...f, nombre: [parsed.nombre, parsed.apellido].filter(Boolean).join(' '), apellido: '' }))
       if (parsed.dni) setClienteForm(f => ({ ...f, dni: parsed.dni }))
       if (parsed.direccion) setClienteForm(f => ({ ...f, domicilio: parsed.direccion }))
       if (parsed.localidad) setClienteForm(f => ({ ...f, ciudad: parsed.localidad }))

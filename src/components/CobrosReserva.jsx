@@ -8,7 +8,7 @@ import { cuotasMensuales } from '../lib/mensualidades.js'
 import PlanMensual from './PlanMensual'
 import { Link } from 'react-router-dom'
 
-export default function CobrosReserva({ reserva, onChange, mesInicial = '' }) {
+export default function CobrosReserva({ reserva, onChange, mesInicial = '', revision = 0 }) {
   const [pagos, setPagos] = useState([])
   const [cargando, setCargando] = useState(true)
   const [cargaFallida, setCargaFallida] = useState(false)
@@ -20,7 +20,7 @@ export default function CobrosReserva({ reserva, onChange, mesInicial = '' }) {
   const [guardando, setGuardando] = useState(false)
   const [confirmar, setConfirmar] = useState(false)
   const [anular, setAnular] = useState(null)
-  const [estado, setEstado] = useState(reserva.estado)
+  const estado = reserva.estado
   const [condiciones, setCondiciones] = useState(null)
   const [precio, setPrecio] = useState(String(reserva.precio_total ?? ''))
   const [sinSena, setSinSena] = useState(reserva.requiere_sena === false)
@@ -56,6 +56,7 @@ export default function CobrosReserva({ reserva, onChange, mesInicial = '' }) {
 
   useEffect(() => {
     let activo = true
+    setCargando(true); setCargaFallida(false)
     supabase.from('pagos').select('*').eq('reserva_id', reserva.id).then(({ data, error: err }) => {
       if (!activo) return
       if (err) { setError('No se pudieron cargar los pagos. ' + err.message); setCargaFallida(true) }
@@ -63,7 +64,7 @@ export default function CobrosReserva({ reserva, onChange, mesInicial = '' }) {
       setCargando(false)
     })
     return () => { activo = false }
-  }, [reserva.id])
+  }, [reserva.id, revision])
 
   const resumen = resumenCobros({ ...reserva, ...condiciones }, pagos)
   const pagosVigentes = pagos.filter(p => Number(p.monto) > 0 && p.confirmado)
@@ -120,7 +121,7 @@ export default function CobrosReserva({ reserva, onChange, mesInicial = '' }) {
       setVista('historial')
       let nuevoEstado
       if (confirma) {
-        setEstado('confirmada'); nuevoEstado = 'confirmada'
+        nuevoEstado = 'confirmada'
       }
       setConfirmar(false)
       onChange?.(nuevoEstado)
