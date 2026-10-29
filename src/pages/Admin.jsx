@@ -423,7 +423,7 @@ export function CRUDReservas({ reservaInicial = null, onSaved, onCancel, onDelet
     setGuardando(false)
     if (error) { showToast('Error: ' + error.message); return }
     showToast(editando.id ? '✓ Reserva actualizada' : '✓ Reserva creada')
-    onSaved?.()
+    onSaved?.({ clienteAsignado: !!campos.cliente_id && campos.cliente_id !== reservaInicial?.cliente_id && campos.estado === 'pendiente', tienePrecio: Number(campos.precio_total) > 0 })
     setEditando(null)
     setDetalle(null)
     cargar()

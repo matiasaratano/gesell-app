@@ -1,6 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { datosPago, mensualidades, mensajeReserva, pendientesLimpieza } from './operacion-reserva.js'
+import { datosPago, mensualidades, mensajeReserva, pendientesLimpieza, confirmaReservaConPago } from './operacion-reserva.js'
+
+test('una sena confirma una pendiente, otros cobros conservan su confirmacion opcional', () => {
+  assert.equal(confirmaReservaConPago('pendiente', 'seña'), true)
+  for (const tipo of ['saldo','mensualidad','total']) {
+    assert.equal(confirmaReservaConPago('pendiente', tipo), false)
+    assert.equal(confirmaReservaConPago('pendiente', tipo, true), true)
+  }
+  for (const estado of ['cerrada','cancelada','confirmada','finalizada']) assert.equal(confirmaReservaConPago(estado, 'seña'), false)
+})
 
 test('mensualidad exige período; saldo no conserva un período anterior', () => {
   const pago = { tipo: 'mensualidad', monto: '350.000,50', fecha_recibido: '2027-01-10', metodo: 'transferencia', periodo_mes: '2027-01' }

@@ -22,12 +22,22 @@ function matches(r,u){return [...u.searchParams].every(([k,v])=>{
   let clients=[{id:'c1',nombre:'Ana',dni:'123',domicilio:'Calle 1',email:'ana@example.com'},{id:'c2',nombre:'Ana',dni:'123',domicilio:'',email:'ana@example.com'},...Array.from({length:53},(_,i)=>({id:`otro-${i}`,nombre:`Persona ${String(i).padStart(2,'0')}`}))];
   let rows=[{id:'r1',cliente_id:'c1',propiedad_id:'p1',estado:'confirmada',canal_origen:'directo',checkin:'2027-01-01',checkout:'2027-01-05',precio_total:1000,adultos:2,menores:0},...Array.from({length:204},(_,i)=>({id:`reserva-${i}`,cliente_id:clients[i%clients.length].id,propiedad_id:'p1',estado:'confirmada',canal_origen:'directo',checkin:'2027-02-01',checkout:'2027-02-03',precio_total:1000,adultos:2,menores:0}))];
   const pagos=[{id:'pago1',reserva_id:'r1',tipo:'seña',monto:300,confirmado:true,fecha_recibido:'2026-10-28',metodo:'transferencia'}],mensajes=[],props=[{id:'p1',nombre:'Depto 1',activa:true,direccion:'Calle 1',alias_cbu:'prueba'}];
+  let fallarCobro=false;
+  const intentosCobro=[];
   await context.route('**/*',async route=>{
    if(await mockAuth(route))return;
    const req=route.request(),u=new URL(req.url()),body=req.postDataJSON();
    if(u.pathname.startsWith('/rest/v1/')){
     const table=u.pathname.split('/').pop();
     if(table==='cancelar_reserva'){Object.assign(rows.find(r=>r.id===body.p_id),{estado:'cancelada',cancelacion_motivo:body.p_motivo});return route.fulfill({json:body.p_id})}
+    if(table==='registrar_cobro'){
+     intentosCobro.push(body);
+     if(fallarCobro)return route.fulfill({status:400,json:{message:'Error simulado al cobrar'}});
+     const p={...body.p_pago,reserva_id:body.p_reserva,confirmado:true};
+     if(!pagos.some(p=>p.id===body.p_pago.id))pagos.push(p);
+     if(body.p_confirmar)rows.find(r=>r.id===body.p_reserva).estado='confirmada';
+     return route.fulfill({json:p});
+    }
     if(table==='guardar_mensaje_reserva'){if(!mensajes.some(m=>m.id===body.p_id))mensajes.push({id:body.p_id,reserva_id:body.p_reserva,tipo:body.p_tipo,texto:body.p_texto,datos:body.p_datos,creado_el:'2026-10-28T15:00:00Z',enviado_el:null});return route.fulfill({json:body.p_id})}
     if(table==='unificar_clientes'){clients=clients.filter(c=>c.id!==body.p_origen).map(c=>c.id===body.p_destino?{...c,...body.p_datos}:c);rows.forEach(r=>{if(r.cliente_id===body.p_origen)r.cliente_id=body.p_destino});return route.fulfill({json:body.p_destino})}
     let data=table==='reservas'?rows:table==='clientes'?clients:table==='propiedades'?props:table==='pagos'?pagos:table==='reserva_mensajes'?mensajes:[];
@@ -90,6 +100,42 @@ function matches(r,u){return [...u.searchParams].every(([k,v])=>{
   await page.locator('.cobros-totales').getByText(/\$\s*300,00/).waitFor();
   assert.equal(await page.getByRole('button',{name:'Registrar pago',exact:true}).count(),0);
   await page.screenshot({path:`${out}/${width}-cancelada-pagos.png`,fullPage:true});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+  const pendiente=rows.find(r=>r.id==='reserva-1');pendiente.estado='pendiente';pendiente.cliente_id=null;pendiente.checkin='2027-03-01';pendiente.checkout='2027-03-05';
+  await page.goto(base+'/reservas/reserva-1');
+  await page.getByRole('button',{name:'Asignar cliente',exact:true}).click();
+  await page.getByPlaceholder('Buscar por nombre o DNI...').fill('Ana');
+  await page.getByText('Ana',{exact:true}).click();
+  await page.getByRole('button',{name:'✓ Guardar',exact:true}).click();
+  let cobro=page.getByRole('dialog',{name:'Registrar pago',exact:true});
+  await cobro.waitFor();
+  assert.equal(pendiente.estado,'pendiente');assert.equal(pagos.length,1);
+  assert.equal(await cobro.getByRole('checkbox',{name:'Confirmar también la reserva'}).count(),0);
+  await cobro.getByRole('button',{name:'Cancelar',exact:true}).click();
+  const seguimiento=page.getByRole('region',{name:'Seguimiento de la reserva'});
+  await seguimiento.locator('li').nth(1).getByRole('button',{name:'Ya lo envié',exact:true}).click();
+  await page.locator('.ficha-proxima').getByText('Detalle enviado · esperando la seña',{exact:true}).waitFor();
+  assert.ok(pendiente.detalle_enviado_el);
+  await page.screenshot({path:`${out}/${width}-seguimiento-pendiente.png`,fullPage:true});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+  await page.locator('.ficha-proxima').getByRole('button',{name:'Registrar seña',exact:true}).click();
+  cobro=page.getByRole('dialog',{name:'Registrar pago',exact:true});
+  await cobro.getByLabel('Importe recibido',{exact:true}).fill('300');
+  fallarCobro=true;
+  await cobro.getByRole('button',{name:'Registrar seña y confirmar',exact:true}).click();
+  await cobro.getByRole('alert').waitFor();
+  assert.equal(pendiente.estado,'pendiente');assert.equal(pagos.length,1);
+  fallarCobro=false;
+  await cobro.getByRole('button',{name:'Registrar seña y confirmar',exact:true}).click();
+  await cobro.getByText('Pago registrado. Reserva confirmada.',{exact:true}).waitFor();
+  assert.equal(intentosCobro[0].p_confirmar,true);assert.equal(intentosCobro[0].p_pago.id,intentosCobro[1].p_pago.id);
+  assert.equal(pendiente.estado,'confirmada');assert.equal(pagos.length,2);
+  await cobro.getByRole('button',{name:'Cerrar',exact:true}).click();
+  await seguimiento.locator('li').nth(3).getByRole('button',{name:'Ya lo envié',exact:true}).click();
+  await seguimiento.locator('li').nth(3).getByText('Enviado',{exact:true}).waitFor();
+  assert.ok(pendiente.voucher_enviado_el);
+  assert.equal(rows.length,205);assert.equal(clients.length,54);
+  await page.screenshot({path:`${out}/${width}-seguimiento-confirmada.png`,fullPage:true});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
   assert.deepEqual(errors,[]);console.log(JSON.stringify({width,mensajes:mensajes.length,pagos:pagos.length,clientes:clients.length,errors}));
   await context.close();

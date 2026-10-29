@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { dinero, parseImporte, resumenCobros } from '../lib/cobros'
 import './cobros.css'
 import PagoFields from './PagoFields'
-import { datosPago, pagoVacio, mensualidades } from '../lib/operacion-reserva.js'
+import { datosPago, pagoVacio, mensualidades, confirmaReservaConPago } from '../lib/operacion-reserva.js'
 import { cuotasMensuales } from '../lib/mensualidades.js'
 import PlanMensual from './PlanMensual'
 import { Link } from 'react-router-dom'
@@ -109,16 +109,17 @@ export default function CobrosReserva({ reserva, onChange, mesInicial = '' }) {
     setMensaje('')
     try {
       const payload = datosPago(pago, pagoIdRef.current)
-      const { data, error: err } = await supabase.rpc('registrar_cobro', { p_reserva: reserva.id, p_pago: payload, p_confirmar: confirmar })
+      const confirma = confirmaReservaConPago(estado, payload.tipo, confirmar)
+      const { data, error: err } = await supabase.rpc('registrar_cobro', { p_reserva: reserva.id, p_pago: payload, p_confirmar: confirma })
       if (err) throw err
       setPagos(prev => [...prev.filter(p => p.id !== data.id), data])
       pagoIdRef.current = crypto.randomUUID()
       setPago(prev => ({ ...prev, monto: '' }))
-      setMensaje('Pago registrado.')
+      setMensaje(confirma ? 'Pago registrado. Reserva confirmada.' : 'Pago registrado.')
       setRegistrando(false)
       setVista('historial')
       let nuevoEstado
-      if (confirmar && estado === 'pendiente') {
+      if (confirma) {
         setEstado('confirmada'); nuevoEstado = 'confirmada'
       }
       setConfirmar(false)
@@ -184,8 +185,8 @@ export default function CobrosReserva({ reserva, onChange, mesInicial = '' }) {
       {registrando && !['cerrada', 'cancelada'].includes(estado) && <form ref={formularioRef} className="cobros-registro" onSubmit={guardar}>
         <h3>Registrar cobro</h3>
         <PagoFields value={pago} onChange={setPago} disabled={guardando} total={resumen.saldo} checkin={reserva.checkin} checkout={reserva.checkout} />
-        {estado === 'pendiente' && <label className="cobros-check"><input type="checkbox" checked={confirmar} onChange={e => setConfirmar(e.target.checked)} disabled={guardando} />Confirmar también la reserva</label>}
-        <div className="cobros-acciones"><button className="cobros-primary" disabled={guardando || !pago.monto}>{guardando ? 'Guardando…' : 'Registrar pago recibido'}</button><button type="button" disabled={guardando} onClick={() => setRegistrando(false)}>Cancelar</button></div>
+        {estado === 'pendiente' && (pago.tipo === 'seña' ? <p>Al registrar la seña, la reserva quedará confirmada.</p> : <label className="cobros-check"><input type="checkbox" checked={confirmar} onChange={e => setConfirmar(e.target.checked)} disabled={guardando} />Confirmar también la reserva</label>)}
+        <div className="cobros-acciones"><button className="cobros-primary" disabled={guardando || !pago.monto}>{guardando ? 'Guardando…' : estado === 'pendiente' && pago.tipo === 'seña' ? 'Registrar seña y confirmar' : 'Registrar pago recibido'}</button><button type="button" disabled={guardando} onClick={() => setRegistrando(false)}>Cancelar</button></div>
       </form>}
       {esMensual && <div className="cobros-tabs" aria-label="Detalle de cobros"><button aria-pressed={vista === 'meses'} onClick={() => setVista('meses')}>Mensualidades</button><button aria-pressed={vista === 'historial'} onClick={() => setVista('historial')}>Pagos registrados ({pagosVigentes.length})</button></div>}
       {esMensual && vista === 'meses' && <PlanMensual reserva={reserva} pagos={pagos} onCobrar={cobrarMes} onChange={onChange} disabled={guardando} />}

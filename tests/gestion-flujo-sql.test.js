@@ -21,6 +21,7 @@ async function fixture() {
   await db.exec(sql('20260930_solicitudes'))
   await db.exec(sql('20260930_solicitudes_reservas_eliminadas'))
   await db.exec(sql('20261028_flujo_gestion'));await db.exec(sql('20261028_flujo_gestion'))
+  await db.exec(sql('20261028_seguimiento_reserva'));await db.exec(sql('20261028_seguimiento_reserva'))
   await db.exec('grant usage on schema auth to authenticated;grant select,insert,update,delete on propiedades,clientes,reservas,pagos,solicitudes to authenticated;set role authenticated;')
   const [a,b]=(await db.query("insert into clientes(nombre,dni,domicilio) values('Ana','123','Calle original'),('Ana','123',null) returning *")).rows
   const id=randomUUID(),payment=randomUUID()
@@ -29,6 +30,22 @@ async function fixture() {
   return {db,a,b,id,payment}
 }
 const merge=(db,a,b,datos={...b,domicilio:a.domicilio})=>db.query('select unificar_clientes($1,$2,$3,$4)',[a.id,b.id,JSON.stringify({origen:a,destino:b}),JSON.stringify(datos)])
+test('sena y confirmacion son atomicas sin checkbox y otros pagos no confirman solos',async()=>{
+  const {db,id}=await fixture();try {
+    await db.query("update reservas set estado='pendiente' where id=$1",[id])
+    const p={id:randomUUID(),tipo:'seña',monto:-1,fecha_recibido:'2026-10-28',metodo:'transferencia'}
+    await assert.rejects(db.query('select registrar_cobro($1,$2,false)',[id,JSON.stringify(p)]),/Importe/)
+    assert.equal((await db.query('select estado from reservas where id=$1',[id])).rows[0].estado,'pendiente')
+    await db.query('select registrar_cobro($1,$2,false)',[id,JSON.stringify({...p,id:randomUUID(),tipo:'saldo',monto:100})])
+    assert.equal((await db.query('select estado from reservas where id=$1',[id])).rows[0].estado,'pendiente')
+    await db.query('select registrar_cobro($1,$2,false)',[id,JSON.stringify({...p,monto:300})])
+    await db.query('select registrar_cobro($1,$2,false)',[id,JSON.stringify({...p,monto:300})])
+    assert.equal((await db.query('select estado from reservas where id=$1',[id])).rows[0].estado,'confirmada')
+    assert.equal((await db.query('select count(*)::int n from pagos where id=$1',[p.id])).rows[0].n,1)
+    await db.query('update pagos set confirmado=false where id=$1',[p.id])
+    assert.equal((await db.query('select estado from reservas where id=$1',[id])).rows[0].estado,'confirmada')
+  } finally { await db.close() }
+})
 test('cancelar conserva pagos y datos; eliminar con pagos se rechaza',async()=>{
   const {db,id,payment}=await fixture();try {
     await assert.rejects(db.query('select eliminar_reserva_segura($1)',[id]),/tiene pagos/)

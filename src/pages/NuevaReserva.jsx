@@ -7,7 +7,7 @@ import { avisoCapacidad } from '../lib/capacidad.js'
 import { useConfirmacion } from '../lib/confirmacion.js'
 import { confirmarClienteNuevo } from '../lib/clientes-duplicados.js'
 import { cierreImportadoDisponible, revisarDisponibilidadSolicitud } from '../lib/disponibilidad-solicitud.js'
-import { pagoVacio, datosPago } from '../lib/operacion-reserva.js'
+import { pagoVacio, datosPago, confirmaReservaConPago } from '../lib/operacion-reserva.js'
 import '../components/cobros.css'
 
 // ─── Constantes ────────────────────────────────────────────────────────────────
@@ -253,7 +253,7 @@ export default function NuevaReserva({ onExito }) {
           menores:         menores,
           mascotas:        mascotas,
           precio_total:    Number(precioTotal),
-          estado:          estado,
+          estado:          pago && confirmaReservaConPago(estado, pago.tipo) ? 'confirmada' : estado,
           notas_internas:  notasInt.trim() || null,
           modalidad,
           requiere_sena: requiereSena,

@@ -7,6 +7,9 @@ export function hoyLocal() {
 export function pagoVacio(tipo = 'seña') {
   return { tipo, monto: '', fecha_recibido: hoyLocal(), metodo: 'transferencia', periodo_mes: '' }
 }
+export function confirmaReservaConPago(estado, tipo, confirmar = false) {
+  return estado === 'pendiente' && (tipo === 'seña' || confirmar)
+}
 export function datosPago(form, id) {
   const monto = parseImporte(form.monto)
   if (!Number.isFinite(monto) || monto <= 0) throw new Error('Ingresá un importe mayor a cero, con hasta dos decimales.')

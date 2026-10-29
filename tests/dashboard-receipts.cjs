@@ -138,7 +138,7 @@ function matches(row, url) {
         assert.equal(payments.length, 2);
         failPayment = false;
         await dialog.getByRole('button', { name: 'Registrar pago recibido', exact: true }).click();
-        await dialog.getByText('Pago registrado.', { exact: true }).waitFor();
+        await dialog.getByText('Pago registrado. Reserva confirmada.', { exact: true }).waitFor();
         assert.equal(payments.length, 3);
         assert.equal(calls[0].p_pago.id, calls[1].p_pago.id);
         assert.equal(payments[2].monto, 100.50);

@@ -12,6 +12,8 @@ import { useConfirmacion } from '../lib/confirmacion.js'
 import CancelarReserva from '../components/CancelarReserva'
 import MensajesReserva from '../components/MensajesReserva'
 import { proximaAccion } from '../lib/proxima-accion.js'
+import SeguimientoReserva from '../components/SeguimientoReserva'
+import PagoRapido from '../components/PagoRapido'
 
 const fecha = value => value?.slice(0, 10).split('-').reverse().join('/') || '—'
 const plataformas = {
@@ -58,6 +60,7 @@ function FichaReserva() {
   const [cancelando, setCancelando] = useState(false)
   const [mensajes, setMensajes] = useState(null)
   const [tipoMensaje, setTipoMensaje] = useState(params.get('tipo') || 'detalle')
+  const [cobrar, setCobrar] = useState(false)
   const [editor, setEditor] = useState(null)
   const [recordar, setRecordar] = useState('')
   const [guardando, setGuardando] = useState(false)
@@ -113,6 +116,15 @@ function FichaReserva() {
     if (err || !data) { setError('No se pudo guardar el cambio.'); return }
     setMensaje('Cambio guardado.'); recargar()
   }
+  function avanzar(paso) {
+    if (paso.accion === 'editar') setEditor(reserva)
+    else if (paso.accion === 'cobrar') {
+      if (paso.abrir) setCobrar(true)
+      else setTab('pagos')
+    } else {
+      setTipoMensaje(paso.tipo || 'detalle'); setTab(paso.accion)
+    }
+  }
   async function reabrir() {
     if (guardando) return
     setGuardando(true); setError('')
@@ -136,7 +148,7 @@ function FichaReserva() {
   }
   if (loading) return <main className="cobros cobros-page"><p role="status">Cargando reserva…</p></main>
   if (!reserva) return <main className="cobros cobros-page"><p role="alert">{error}</p><button onClick={recargar}>Reintentar</button></main>
-  if (editor) return <main className="cobros cobros-page"><CRUDReservas key={editor.id} reservaInicial={editor} onSaved={() => { setEditor(null); recargar() }} onCancel={() => setEditor(null)} onDeleted={() => navigate('/calendario')} /></main>
+  if (editor) return <main className="cobros cobros-page"><CRUDReservas key={editor.id} reservaInicial={editor} onSaved={resultado => { setEditor(null); if (resultado?.clienteAsignado) { setTab('pagos'); if (resultado.tienePrecio) setCobrar(true) } recargar() }} onCancel={() => setEditor(null)} onDeleted={() => navigate('/calendario')} /></main>
   const cerrada = reserva.estado === 'cerrada'
   const manual = ['directo', 'manual'].includes(reserva.canal_origen)
   const plataforma = plataformas[reserva.canal_origen]
@@ -149,6 +161,7 @@ function FichaReserva() {
     </header>
     <p>{reserva.propiedades?.nombre} · {fecha(reserva.checkin)} → {fecha(reserva.checkout)}</p>
     <p>{reserva.estado} · {manual ? 'Manual' : reserva.canal_origen}</p>
+    {!cerrada && reserva.estado === 'pendiente' && <p className="reserva-fechas-ocupadas">Fechas ocupadas en el calendario · pendiente de confirmación</p>}
     <div className="cobros-acciones ficha-acciones"><button className="cobros-primary" onClick={() => setEditor(reserva)}>Editar reserva</button>
       {!cerrada && <Link className="cobros-link" to={`/recibos?reserva_id=${reserva.id}`}>Recibos de pagos</Link>}
       {plataforma && <a className="cobros-link" href={plataforma.url} target="_blank" rel="noopener noreferrer" title={`Abrir el panel de ${plataforma.nombre} en una pestaña nueva`}>Abrir {plataforma.nombre}</a>}
@@ -161,7 +174,9 @@ function FichaReserva() {
     </div>
     {cancelando && <CancelarReserva reserva={reserva} onClose={() => setCancelando(false)} onSaved={() => { setCancelando(false); setMensaje('Reserva cancelada. Se conservaron los registros de pago.'); recargar() }} />}
     {reserva.estado === 'cancelada' && <p className="cobros-aviso">Reserva cancelada{reserva.cancelacion_motivo ? `: ${reserva.cancelacion_motivo}` : ''}. Los pagos registrados se conservan.</p>}
-    {siguiente && <section className="ficha-proxima"><div><small>Próxima acción</small><p>{siguiente.texto}</p></div><button className="cobros-primary" onClick={() => { if (siguiente.accion === 'editar') setEditor(reserva); else { setTipoMensaje(siguiente.tipo || 'detalle'); setTab(siguiente.accion) } }}>{siguiente.boton}</button></section>}
+    <SeguimientoReserva reserva={reserva} pagos={pagos} mensajes={mensajes} onAccion={avanzar} onMarcar={(campo, valor) => actualizar({ [campo]: valor })} disabled={guardando} />
+    {siguiente && <section className="ficha-proxima"><div><small>Próxima acción</small><p>{siguiente.texto}</p></div><button className="cobros-primary" onClick={() => avanzar(siguiente)}>{siguiente.boton}</button></section>}
+    {cobrar && <PagoRapido reservaId={id} onClose={() => { setCobrar(false); recargar() }} onSaved={recargar} />}
     {abrir && <div className="cobros-aviso"><p>¿Abrir este cierre manual? Estas fechas quedarán disponibles si no hay otro bloqueo.</p><div className="cobros-acciones"><button disabled={guardando} onClick={reabrir}>Abrir cierre</button><button onClick={() => setAbrir(false)}>Cancelar</button></div></div>}
     {error && <p role="alert" className="cobros-error">{error}</p>}
     {mensaje && <p role="status">{mensaje}</p>}
