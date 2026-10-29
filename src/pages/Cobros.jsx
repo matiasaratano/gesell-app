@@ -27,7 +27,7 @@ export default function Cobros() {
   const [filtro, setFiltro] = useState('todos')
   const [propiedad, setPropiedad] = useState('')
   const [periodo, setPeriodo] = useState('proximas')
-  const [orden, setOrden] = useState('ingreso')
+  const [orden, setOrden] = useState('verde')
   const [error, setError] = useState('')
   const [cargando, setCargando] = useState(true)
   const [revision, setRevision] = useState(0)

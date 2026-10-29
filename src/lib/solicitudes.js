@@ -67,7 +67,7 @@ export function detalleSolicitud(s, propiedad, { pedirDatos = false } = {}) {
       '',
       '*Acompañantes (nombre, apellido y DNI)*',
       '',
-      'Podés enviarme estos datos junto con el comprobante de pago. La reserva se confirma al verificar la seña.',
+      'La reserva se confirma al verificar la seña.',
     ]),
   ])
 }

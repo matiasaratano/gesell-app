@@ -36,6 +36,7 @@ test('datos del titular son opcionales en el detalle y no se vuelven a pedir por
   const combinado=detalleSolicitud(s,p,{pedirDatos:true})
   for(const texto of ['mi.alias','comprobante','por favor pasame estos datos del titular:','*Titular*','Nombre y apellido:','DNI:','Teléfono:','Email:','Domicilio y localidad:','*Acompañantes (nombre, apellido y DNI)*'])assert.ok(combinado.includes(texto))
   assert.ok(combinado.endsWith('La reserva se confirma al verificar la seña.'))
+  assert.doesNotMatch(combinado,/Podés enviarme estos datos junto con el comprobante de pago/)
   assert.doesNotMatch(combinado,/antes de transferir.*complet|completar.*antes de pagar/)
 })
 test('el detalle de solicitud pide 30% sin prometer fechas bloqueadas',()=>{

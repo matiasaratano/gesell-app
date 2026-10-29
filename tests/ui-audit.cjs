@@ -181,6 +181,8 @@ function match(row,u) {
     payments=[{reserva_id:'color-verde',confirmado:true,monto:1000},{reserva_id:'color-blanca',confirmado:true,monto:300}];
     await page.reload();await page.waitForLoadState('networkidle');
     const clases=()=>page.locator('.admin-tabla-cobros tbody tr').evaluateAll(filas=>filas.map(f=>f.classList.contains('admin-fila-pagada')?'verde':f.classList.contains('admin-fila-pendiente')?'amarilla':'blanca'));
+    assert.equal(await page.getByLabel('Ordenar por',{exact:true}).inputValue(),'verde');
+    assert.deepEqual(await clases(),['verde','amarilla','amarilla','blanca']);
     for(const [orden,esperado] of [['verde',['verde','amarilla','amarilla','blanca']],['amarilla',['amarilla','amarilla','blanca','verde']],['blanca',['blanca','verde','amarilla','amarilla']]]){
      await page.getByLabel('Ordenar por',{exact:true}).selectOption(orden);
      assert.deepEqual(await clases(),esperado);
