@@ -21,6 +21,7 @@ export function rangoFechas(desde, hasta) {
 
 export const solicitudLista = s => !!s.propiedad_id && Number(s.precio_total) > 0
 export function vistaSolicitud(s, hoy) {
+  if (s.estado === 'confirmada' && s.estado_reserva === 'cancelada') return 'cancelada'
   return s.estado === 'confirmada' && s.salida_reserva && s.salida_reserva <= hoy ? 'archivada' : s.estado
 }
 export function solicitudesAccionables(rows, propiedadId = '') {

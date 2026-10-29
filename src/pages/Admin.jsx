@@ -732,7 +732,7 @@ export function CRUDReservas({ reservaInicial = null, onSaved, onCancel, onDelet
                 <td data-label="Egreso">{fmt(r.checkout)}</td>
                 <td data-label="Departamento">{r.propiedades?.nombre || 'Sin departamento'}</td>
                 <td data-label="Estado">{cierre ? tipoCierreReserva(r) : (ESTADO_LABELS[r.estado] || r.estado)}</td>
-                <td data-label="Precio total" className="admin-importe">{cierre ? '—' : Number(r.precio_total) > 0 ? `$${Number(r.precio_total).toLocaleString('es-AR')}` : 'Sin cargar'}</td>
+                <td data-label="Precio total" className="admin-importe">{cierre ? '—' : Number(r.precio_total) > 0 ? `$${Number(r.precio_total).toLocaleString('es-AR', { maximumFractionDigits: 2 })}` : 'Sin cargar'}</td>
                 <td className="admin-acciones"><Link to={`/reservas/${r.id}?accion=editar`} aria-label={`Editar ${nombreReservaAdmin(r)}`}>Editar</Link></td>
               </tr>
             )
@@ -806,7 +806,7 @@ function ModalDetalleReserva({ reserva: r, propiedades, estados, estadoLabels, c
             {r.mascotas && <DatoModal label="Mascotas" value="Sí" />}
             <DatoModal
               label="Total"
-              value={r.precio_total ? `$${Number(r.precio_total).toLocaleString('es-AR')}` : '—'}
+              value={r.precio_total ? `$${Number(r.precio_total).toLocaleString('es-AR', { maximumFractionDigits: 2 })}` : '—'}
               highlight
             />
 	            {r.estado === 'cerrada' && <DatoModal label="Tipo de cierre" value={tipoCierreReserva(r)} highlight />}

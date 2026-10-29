@@ -22,6 +22,7 @@ async function fixture() {
   await db.exec(sql('20260930_solicitudes_reservas_eliminadas'))
   await db.exec(sql('20261028_flujo_gestion'));await db.exec(sql('20261028_flujo_gestion'))
   await db.exec(sql('20261028_seguimiento_reserva'));await db.exec(sql('20261028_seguimiento_reserva'))
+  await db.exec(sql('20261029_solicitudes_canceladas'));await db.exec(sql('20261029_solicitudes_canceladas'))
   await db.exec('grant usage on schema auth to authenticated;grant select,insert,update,delete on propiedades,clientes,reservas,pagos,solicitudes to authenticated;set role authenticated;')
   const [a,b]=(await db.query("insert into clientes(nombre,dni,domicilio) values('Ana','123','Calle original'),('Ana','123',null) returning *")).rows
   const id=randomUUID(),payment=randomUUID()
@@ -30,6 +31,26 @@ async function fixture() {
   return {db,a,b,id,payment}
 }
 const merge=(db,a,b,datos={...b,domicilio:a.domicilio})=>db.query('select unificar_clientes($1,$2,$3,$4)',[a.id,b.id,JSON.stringify({origen:a,destino:b}),JSON.stringify(datos)])
+test('eliminar solicitud cancelada conserva reserva y pagos y rechaza confirmadas activas',async()=>{
+  const {db,id,a,payment}=await fixture();try {
+    const s=(await db.query("insert into solicitudes(propiedad_id,cliente_id,datos_cliente,checkin,checkout,precio_total,estado,reserva_id) values($1,$2,'{\"nombre\":\"Ana\"}','2027-01-01','2027-01-05',1000,'confirmada',$3) returning *",[prop,a.id,id])).rows[0]
+    await assert.rejects(db.query('select eliminar_solicitud($1,$2)',[s.id,s.updated_at]),/Cancela/)
+    await assert.rejects(db.query("update solicitudes set estado='eliminada' where id=$1",[s.id]),/confirmada/)
+    await db.query('select cancelar_reserva($1,$2)',[id,'Prueba cancelada'])
+    await assert.rejects(db.query('select eliminar_solicitud($1,$2)',[s.id,'2020-01-01']),/cambio/)
+    await assert.rejects(db.query("update solicitudes set estado='eliminada',precio_total=1 where id=$1",[s.id]),/confirmada/)
+    await db.query('select eliminar_solicitud($1,$2)',[s.id,s.updated_at])
+    await db.query('select eliminar_solicitud($1,$2)',[s.id,s.updated_at])
+    assert.equal((await db.query('select estado from solicitudes where id=$1',[s.id])).rows[0].estado,'eliminada')
+    assert.equal((await db.query('select estado from reservas where id=$1',[id])).rows[0].estado,'cancelada')
+    assert.equal((await db.query('select id from pagos')).rows[0].id,payment)
+    const abierta=(await db.query("insert into solicitudes(propiedad_id,datos_cliente,checkin,checkout,precio_total) values($1,'{\"nombre\":\"Prueba\"}','2027-02-01','2027-02-05',1000) returning *",[prop])).rows[0]
+    await db.query('select eliminar_solicitud($1,$2)',[abierta.id,abierta.updated_at])
+    assert.equal((await db.query('select estado from solicitudes where id=$1',[abierta.id])).rows[0].estado,'eliminada')
+    await db.exec('reset role;set role anon;')
+    await assert.rejects(db.query('select eliminar_solicitud($1,$2)',[s.id,s.updated_at]),/permission denied/)
+  }finally {await db.close()}
+})
 test('sena y confirmacion son atomicas sin checkbox y otros pagos no confirman solos',async()=>{
   const {db,id}=await fixture();try {
     await db.query("update reservas set estado='pendiente' where id=$1",[id])

@@ -2,12 +2,24 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { detalleSolicitud, fichaSolicitud, voucherSolicitud, solicitudLista, solicitudesAccionables, vistaSolicitud, datosVoucherReserva } from './solicitudes.js'
 test('archivadas usa salida vigente de la reserva sin reactivar ni alterar confirmaciones', () => {
+  assert.equal(vistaSolicitud({estado:'confirmada',estado_reserva:'cancelada',salida_reserva:'2020-01-01'},'2026-10-29'),'cancelada')
+  assert.equal(vistaSolicitud({estado:'eliminada',estado_reserva:'cancelada'},'2026-10-29'),'eliminada')
   assert.equal(vistaSolicitud({estado:'confirmada',salida_reserva:'2026-10-01'}, '2026-10-01'), 'archivada')
   assert.equal(vistaSolicitud({estado:'confirmada',checkout:'2026-09-01',salida_reserva:'2026-10-02'}, '2026-10-01'), 'confirmada')
   assert.equal(vistaSolicitud({estado:'confirmada'}, '2026-10-01'), 'confirmada')
   for (const estado of ['abierta','archivada','eliminada']) assert.equal(vistaSolicitud({estado,salida_reserva:'2026-09-01'},'2026-10-01'),estado)
 })
 const s = { datos_cliente:{nombre:'Ana'},precio_total:1000,checkin:'2027-01-01',checkout:'2027-01-05',adultos:2,menores:0 }
+test('detalle y voucher compartidos por Mensajes y Solicitudes no agregan ,00', () => {
+  const solicitud = {...s,precio_total:'100000.00'}
+  const propiedad = {nombre:'Depto 1',alias_cbu:'maratano.mp'}
+  const detalle = detalleSolicitud(solicitud,propiedad)
+  const voucher = voucherSolicitud({...solicitud,estado:'confirmada',clientes:{nombre:'Ana'},propiedades:propiedad,pagos:[{confirmado:true,monto:'30000.00'}]})
+  for (const texto of [detalle,voucher]) {
+    assert.doesNotMatch(texto,/,00\b/)
+    for (const importe of ['100.000','30.000','70.000']) assert.ok(texto.includes(importe))
+  }
+})
 test('detalle breve comparte fechas, noches, personas y solo la cuenta del departamento',()=>{
   const texto=detalleSolicitud(s,{nombre:'Depto 2',direccion:'Calle 1',alias_cbu:'cuenta.depto2',restriccion_vehiculos:true})
   for(const fragmento of ['*Reserva Depto 2*','4 noches','2 personas','cuenta.depto2','comprobante','24 hs','1 al 5 de enero de 2027']) assert.ok(texto.includes(fragmento))

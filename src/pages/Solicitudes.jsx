@@ -39,15 +39,15 @@ export default function Solicitudes() {
     try {
       const solicitudes = await filas('solicitudes', 'checkin')
       const ids = solicitudes.filter(s => s.estado === 'confirmada' && s.reserva_id).map(s => s.reserva_id)
-      const salidas = new Map()
+      const vinculadas = new Map()
       for (let i = 0; i < ids.length; i += 100) {
-        const { data, error } = await supabase.from('reservas').select('id,checkout').in('id', ids.slice(i, i + 100))
+        const { data, error } = await supabase.from('reservas').select('id,checkout,estado').in('id', ids.slice(i, i + 100))
         if (error) throw error
-        data.forEach(r => salidas.set(r.id, r.checkout))
+        data.forEach(r => vinculadas.set(r.id, r))
       }
       const alojamientos = await filas('propiedades', 'nombre')
       const personas = await filas('clientes', 'nombre')
-      setRows(solicitudes.map(s => ({ ...s, salida_reserva: salidas.get(s.reserva_id) }))); setProps(alojamientos); setClientes(personas)
+      setRows(solicitudes.map(s => ({ ...s, salida_reserva: vinculadas.get(s.reserva_id)?.checkout, estado_reserva: vinculadas.get(s.reserva_id)?.estado }))); setProps(alojamientos); setClientes(personas)
     } catch (e) { setError(['42P01', 'PGRST205'].includes(e.code) ? 'Falta instalar la migración de Solicitudes en Supabase.' : `No se pudieron cargar las solicitudes. ${e.message || ''}`) }
     finally { setLoading(false) }
   }
@@ -89,6 +89,15 @@ export default function Solicitudes() {
       await cargar()
     })
   }
+  async function eliminar(s) {
+    if (!await confirmar('¿Eliminar esta solicitud del listado? Quedará en Eliminadas. No se borrarán la reserva vinculada ni sus pagos.')) return
+    await ejecutar(async () => {
+      const { error } = await supabase.rpc('eliminar_solicitud', { p_id: s.id, p_version: s.updated_at })
+      if (error) throw new Error(error.code === 'PGRST202' ? 'Falta ejecutar la actualización SQL de solicitudes canceladas.' : error.message)
+      await cargar()
+      setMensaje('Solicitud eliminada. Se conservaron los registros vinculados.')
+    })
+  }
   async function prepararDetalle(s) {
       if (!solicitudLista(s)) throw new Error('Asigná un departamento y un precio antes de preparar la seña.')
       const cierres = await revisarDisponibilidadSolicitud(supabase, s)
@@ -119,13 +128,13 @@ export default function Solicitudes() {
     <header className="solicitudes-cabecera"><h1>Solicitudes</h1><div className="cobros-acciones"><button className="cobros-primary" disabled={busy} onClick={compartirFormulario}>Compartir formulario</button><button disabled={busy || loading} onClick={cargar}>Actualizar</button><button disabled={busy || loading} onClick={() => setEditor(empty())}>Nueva solicitud</button></div></header>
     <p className="cobros-aviso">Sin bloqueo de fechas hasta confirmar el pago recibido. Booking y Airbnb se actualizan por separado.</p>
     {error && <p role="alert" className="cobros-error">{error}</p>}{mensaje && <p role="status">{mensaje}</p>}
-    <div className="cobros-tabs" aria-label="Estado de solicitudes">{Object.entries({ abierta: 'Abiertas', confirmada: 'Confirmadas', archivada: 'Archivadas', eliminada: 'Eliminadas' }).map(([value,label]) => <button key={value} aria-pressed={tab===value} onClick={()=>{setTab(value);setParams({})}}>{label} ({rows.filter(s=>vistaSolicitud(s,hoy)===value).length})</button>)}</div>
+    <div className="cobros-tabs" aria-label="Estado de solicitudes">{Object.entries({ abierta: 'Abiertas', confirmada: 'Confirmadas', cancelada: 'Canceladas', archivada: 'Archivadas', eliminada: 'Eliminadas' }).map(([value,label]) => <button key={value} aria-pressed={tab===value} onClick={()=>{setTab(value);setParams({})}}>{label} ({rows.filter(s=>vistaSolicitud(s,hoy)===value).length})</button>)}</div>
     {solicitudId && <div className="cobros-acciones"><button onClick={()=>{setParams({});setBusqueda('')}}>Ver todas las solicitudes</button></div>}
     <label className="solicitudes-busqueda">Buscar solicitud<input type="search" value={busqueda} onChange={e=>setBusqueda(e.target.value)} placeholder="Cliente o departamento" /></label>
     {loading ? <p role="status">Cargando solicitudes…</p> : <ul className="cobros-lista">{visibles.map(s => <li key={s.id}><div><strong>{s.datos_cliente.nombre} {s.datos_cliente.apellido}</strong><p>{props.find(p=>p.id===s.propiedad_id)?.nombre || 'Sin departamento'} · {fechaSolicitud(s.checkin)} → {fechaSolicitud(s.checkout)} · {Number(s.precio_total)>0 ? dinero(s.precio_total) : 'Precio pendiente'}</p>{s.datos_recibidos_at && <small>Datos recibidos del huésped</small>}</div><div className="cobros-acciones">
-      {s.estado==='eliminada' ? <span>Reserva eliminada</span> : s.estado==='confirmada' ? <><Link className="cobros-link" to={`/reservas/${s.reserva_id}`}>Ver reserva</Link><button disabled={busy} onClick={()=>voucher(s)}>Voucher de confirmación</button></> : s.estado==='archivada' ? <button disabled={busy} onClick={()=>archivar(s)}>Reactivar</button> : <>
+      {s.estado==='eliminada' ? <span>Solicitud eliminada</span> : vistaSolicitud(s,hoy)==='cancelada' ? <><Link className="cobros-link" to={`/reservas/${s.reserva_id}`}>Ver reserva cancelada</Link><button className="cobros-danger" disabled={busy} onClick={()=>eliminar(s)}>Eliminar solicitud</button></> : s.estado==='confirmada' ? <><Link className="cobros-link" to={`/reservas/${s.reserva_id}`}>Ver reserva</Link><button disabled={busy} onClick={()=>voucher(s)}>Voucher de confirmación</button></> : s.estado==='archivada' ? <><button disabled={busy} onClick={()=>archivar(s)}>Reactivar</button><button className="cobros-danger" disabled={busy} onClick={()=>eliminar(s)}>Eliminar solicitud</button></> : <>
         <button className={!solicitudLista(s) ? 'cobros-primary' : ''} disabled={busy} onClick={()=>setEditor(structuredClone(s))}>{solicitudLista(s) ? 'Datos' : 'Asignar departamento y precio'}</button>{solicitudLista(s) && <><button disabled={busy} onClick={()=>ejecutar(async()=>setTexto(await prepararDetalle(s)))}>Detalle para seña</button><button className="cobros-primary" disabled={busy} onClick={()=>setCobrar(s)}>Confirmar pago</button></>}<button disabled={busy} onClick={()=>archivar(s)}>Archivar</button>
-      </>}</div></li>)}</ul>}
+      </>}{s.estado==='abierta' && <button className="cobros-danger" disabled={busy} onClick={()=>eliminar(s)}>Eliminar solicitud</button>}</div></li>)}</ul>}
     {!loading && !visibles.length && <p>No hay solicitudes en esta vista.</p>}
     {bloqueo && <Dialog titulo="No se puede solicitar la seña" cerrar={()=>setBloqueo(null)}><p role="alert">{bloqueo.mensaje}</p><div className="cobros-acciones"><button className="cobros-primary" onClick={()=>{const s=rows.find(s=>s.id===bloqueo.id);if(s)setEditor(structuredClone(s));setBloqueo(null)}}>Revisar solicitud</button><button onClick={()=>setBloqueo(null)}>Cerrar</button></div></Dialog>}
     {cierresSeña && <Dialog titulo="Fechas cerradas en la plataforma" cerrar={()=>setCierresSeña(null)}><p><strong>{cierresSeña.propiedad.nombre}</strong> · {fechaSolicitud(cierresSeña.s.checkin)} → {fechaSolicitud(cierresSeña.s.checkout)}</p><DetalleCierres cierres={cierresSeña.cierres} /><p>Podés preparar una reserva directa si estos cierres son preventivos. Las fechas no cambian hasta que confirmes el pago. Booking y Airbnb seguirán bajo tu gestión manual.</p><div className="cobros-acciones"><button className="cobros-primary" onClick={()=>{setTexto(cierresSeña.texto);setCierresSeña(null)}}>Preparar seña sobre estos cierres</button><button onClick={()=>setCierresSeña(null)}>Cancelar</button></div></Dialog>}

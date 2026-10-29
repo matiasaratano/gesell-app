@@ -9,7 +9,7 @@ const output='/tmp/gesell-solicitudes';fs.mkdirSync(output,{recursive:true});
  try {for(const width of [1440,390,320]){
   const ctx=await browser.newContext({viewport:{width,height:900},locale:'es-AR'});
   try {
-   const page=await ctx.newPage(), rows=[], errors=[];let converted=0,firstSubmission=true,occupied=false,finished=false,imported=false;
+   const page=await ctx.newPage(), rows=[], errors=[];let converted=0,firstSubmission=true,occupied=false,finished=false,imported=false,cancelled=false,deleted=0;
    const importedClosure={id:'closure-test',checkin:'2090-01-01',checkout:'2090-02-01',estado:'cerrada',canal_origen:'booking',cliente_id:null,precio_total:null,pagos:[]};
    page.on('pageerror',e=>errors.push(e.message));
    const intercept=async route=>{
@@ -18,6 +18,10 @@ const output='/tmp/gesell-solicitudes';fs.mkdirSync(output,{recursive:true});
     if(url.pathname.startsWith('/rest/v1/')){
      const table=url.pathname.split('/').pop();const body=req.postDataJSON();
      if(table==='obtener_formulario_general')return route.fulfill({json:'a'.repeat(64)});
+     if(table==='eliminar_solicitud'){
+      assert.ok(cancelled);assert.equal(body.p_id,rows[0].id);assert.equal(body.p_version,rows[0].updated_at);
+      rows[0].estado='eliminada';deleted++;return route.fulfill({json:rows[0].id});
+     }
      if(table==='ver_formulario_general')return route.fulfill({json:body.p_token==='a'.repeat(64)});
      if(table==='recibir_solicitud_publica'){
       if(!rows.some(r=>r.envio_publico_id===body.p_envio))rows.push({id:'sol-publica',envio_publico_id:body.p_envio,datos_cliente:body.p_datos,...body.p_estadia,propiedad_id:null,precio_total:null,estado:'abierta',datos_recibidos_at:'2026-09-30T11:00:00Z',updated_at:'2026-09-30T11:00:00Z'});
@@ -35,7 +39,7 @@ const output='/tmp/gesell-solicitudes';fs.mkdirSync(output,{recursive:true});
      if(table==='propiedades')return route.fulfill({json:[{id:'p1',nombre:'Depto 1',activa:true,alias_cbu:'cuenta.prueba'}]});
      if(table==='clientes')return route.fulfill({json:[{id:'sin-reserva',nombre:'Prueba',apellido:'Prueba',reservas:[]},{id:'cliente-test',nombre:'Lucia',apellido:'Existente',reservas:[{id:'voucher-test',estado:'confirmada'}]}]});
      if(table==='reservas' && url.searchParams.get('select')?.startsWith('id,propiedad_id,checkin'))return route.fulfill({json:[{id:'voucher-test',propiedad_id:'p1',clientes:{nombre:'Lucia',apellido:'Existente'},propiedades:{id:'p1',nombre:'Depto 1'},estado:'confirmada',checkin:'2090-02-01',checkout:'2090-02-04',adultos:3,menores:1,precio_total:200000,pagos:[{confirmado:true,monto:60000},{confirmado:false,monto:10000}]}]});
-     if(table==='reservas' && url.searchParams.get('select')==='id,checkout')return route.fulfill({json:[{id:'reservation-test',checkout:finished?'2020-01-15':'2090-01-15'}]});
+     if(table==='reservas' && url.searchParams.get('select')==='id,checkout,estado')return route.fulfill({json:[{id:'reservation-test',checkout:finished?'2020-01-15':'2090-01-15',estado:cancelled?'cancelada':'confirmada'}]});
      if(table==='reservas'){assert.ok(['GET','PATCH'].includes(req.method()));return route.fulfill({json:req.headers().accept?.includes('vnd.pgrst.object')?{...rows[0],clientes:rows[0].datos_cliente,propiedades:{nombre:'Depto 1'},pagos:[{confirmado:true,monto:30000}],estado:'confirmada'}:occupied?[{id:'ocupada'}]:imported?[importedClosure]:[]});}
      if(table==='solicitudes'){
       if(url.searchParams.get('select')==='estado,reserva_id')return route.fulfill({json:{estado:rows[0].estado,reserva_id:rows[0].reserva_id}});
@@ -118,6 +122,7 @@ const output='/tmp/gesell-solicitudes';fs.mkdirSync(output,{recursive:true});
    await closureWarning.getByRole('button',{name:'Preparar seña sobre estos cierres',exact:true}).click();
    const message=page.getByRole('dialog',{name:'Mensaje para el huésped'});await message.waitFor();
    assert.match(await message.getByLabel('Texto del mensaje').inputValue(),/24 hs/);
+   assert.doesNotMatch(await message.getByLabel('Texto del mensaje').inputValue(),/,00\b/);
    assert.doesNotMatch(await message.getByLabel('Texto del mensaje').inputValue(),/no bloquea fechas|SIN CONFIRMAR/);
    await message.getByRole('button',{name:'Cerrar',exact:true}).click();
    await page.getByRole('button',{name:'Confirmar pago',exact:true}).click();
@@ -136,6 +141,7 @@ const output='/tmp/gesell-solicitudes';fs.mkdirSync(output,{recursive:true});
    const voucher=page.getByRole('dialog',{name:'Mensaje para el huésped'});await voucher.waitFor();
    assert.match(await voucher.getByLabel('Texto del mensaje').inputValue(),/Reserva confirmada/);
    assert.match(await voucher.getByLabel('Texto del mensaje').inputValue(),/70\.000/);
+   assert.doesNotMatch(await voucher.getByLabel('Texto del mensaje').inputValue(),/,00\b/);
    await voucher.getByRole('button',{name:'Cerrar',exact:true}).click();
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
    await page.evaluate(()=>window.scrollTo(0,0));
@@ -151,10 +157,22 @@ const output='/tmp/gesell-solicitudes';fs.mkdirSync(output,{recursive:true});
    await page.getByRole('link',{name:'Ver reserva',exact:true}).waitFor();
    assert.equal(await page.getByRole('button',{name:'Reactivar',exact:true}).count(),0);
    assert.equal(rows[0].estado,'confirmada');
-   rows[0].estado='eliminada';
+   cancelled=true;
    await page.getByRole('button',{name:'Actualizar',exact:true}).click();
+   await page.getByRole('button',{name:'Confirmadas (0)',exact:true}).waitFor();
+   await page.getByRole('button',{name:'Canceladas (1)',exact:true}).click();
+   await page.getByRole('link',{name:'Ver reserva cancelada',exact:true}).waitFor();
+   assert.equal(await page.getByRole('button',{name:'Voucher de confirmación',exact:true}).count(),0);
+   await page.getByRole('button',{name:'Eliminar solicitud',exact:true}).click();
+   const confirm=page.getByRole('dialog',{name:'Confirmar eliminación',exact:true});
+   await confirm.getByRole('button',{name:'Cancelar',exact:true}).click();
+   assert.equal(deleted,0);
+   await page.getByRole('button',{name:'Eliminar solicitud',exact:true}).click();
+   await confirm.getByRole('button',{name:'Eliminar',exact:true}).click();
    await page.getByRole('button',{name:'Eliminadas (1)',exact:true}).click();
-   await page.getByText('Reserva eliminada',{exact:true}).waitFor();
+   await page.getByText('Solicitud eliminada',{exact:true}).waitFor();
+   assert.equal(deleted,1);
+   await page.screenshot({path:`${output}/${width}-eliminada.png`,fullPage:true});
    assert.equal(await page.getByRole('button',{name:'Confirmar pago',exact:true}).count(),0);
    assert.equal(await page.getByRole('button',{name:'Voucher de confirmación',exact:true}).count(),0);
    await page.goto(base+'/mensajes');
@@ -166,6 +184,7 @@ const output='/tmp/gesell-solicitudes';fs.mkdirSync(output,{recursive:true});
    await page.getByRole('button',{name:/Generar plantilla/}).click();
    assert.match(await page.locator('textarea').inputValue(),/Reserva confirmada/);
    assert.match(await page.locator('textarea').inputValue(),/70\.000/);
+   assert.doesNotMatch(await page.locator('textarea').inputValue(),/,00\b/);
    assert.equal(converted,1);
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
    await page.evaluate(()=>window.scrollTo(0,0));

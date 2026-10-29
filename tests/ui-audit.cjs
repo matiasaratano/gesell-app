@@ -33,7 +33,7 @@ function match(row,u) {
  for(const width of [1440,390,320]) {
   const context=await browser.newContext({viewport:{width,height:900},locale:'es-AR',timezoneId:'America/Argentina/Buenos_Aires'});
   const page=await context.newPage();await page.clock.setFixedTime(new Date('2026-09-26T15:00:00Z'));
-  let rows=structuredClone(initialRows),fail=false,failDelete=false,clientListReads=0,reservationRowHeight=0;
+  let rows=structuredClone(initialRows),payments=[],fail=false,failDelete=false,clientListReads=0,reservationRowHeight=0;
   const errors=[],dialogs=[],writes=[];
   page.on('pageerror',e=>errors.push(e.message));page.on('dialog',async d=>{dialogs.push(d.message());await d.dismiss();});
   await context.route('**/*',async route=>{
@@ -60,7 +60,7 @@ function match(row,u) {
      return route.fulfill({status:204});
     }
     if(fail)return route.fulfill({status:503,json:{message:'Servicio no disponible (prueba)'}});
-    let data=table==='propiedades'?properties:table==='clientes'?clients:table==='reservas'?rows:[];
+    let data=table==='propiedades'?properties:table==='clientes'?clients:table==='reservas'?rows:table==='pagos'?payments:[];
     data=data.filter(r=>match(r,u));
     if(table==='clientes' && req.method()==='GET' && u.searchParams.get('select')?.includes('reservas')) {
      data=data.map(c=>({...c,reservas:rows.filter(r=>r.cliente_id===c.id).map(r=>({id:r.id}))}));
@@ -176,6 +176,22 @@ function match(row,u) {
    if(route==='/cobros') {
     assert.equal(dimensions.scroll <= width, true);
     assert.equal(await page.locator('.admin-tabla-cobros tbody tr').count(),2);
+    const originales=rows;
+    rows=[...rows,...['verde','blanca'].map((color,i)=>({id:`color-${color}`,propiedad_id:'p1',cliente_id:'c1',clientes:{nombre:color},propiedades:properties[0],checkin:`2027-01-0${i+1}`,checkout:'2027-01-05',estado:'confirmada',precio_total:1000,requiere_sena:true}))];
+    payments=[{reserva_id:'color-verde',confirmado:true,monto:1000},{reserva_id:'color-blanca',confirmado:true,monto:300}];
+    await page.reload();await page.waitForLoadState('networkidle');
+    const clases=()=>page.locator('.admin-tabla-cobros tbody tr').evaluateAll(filas=>filas.map(f=>f.classList.contains('admin-fila-pagada')?'verde':f.classList.contains('admin-fila-pendiente')?'amarilla':'blanca'));
+    for(const [orden,esperado] of [['verde',['verde','amarilla','amarilla','blanca']],['amarilla',['amarilla','amarilla','blanca','verde']],['blanca',['blanca','verde','amarilla','amarilla']]]){
+     await page.getByLabel('Ordenar por',{exact:true}).selectOption(orden);
+     assert.deepEqual(await clases(),esperado);
+    }
+    assert.doesNotMatch(await page.locator('.admin-tabla-cobros').innerText(),/,00/);
+    await page.screenshot({path:`${output}/${width}-cobros-color.png`,fullPage:true});
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+    await page.getByRole('button',{name:'Pagadas',exact:true}).click();
+    assert.deepEqual(await clases(),['verde']);
+    rows=originales;payments=[];
+    await page.reload();await page.waitForLoadState('networkidle');
     await page.getByRole('link',{name:'Ver cobros de Valeria Prueba',exact:true}).click();
     await page.getByRole('button',{name:'Pagos',exact:true}).waitFor();
    }

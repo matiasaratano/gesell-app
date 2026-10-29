@@ -152,7 +152,7 @@ function matches(row, url) {
         await page.getByLabel('Localidad', { exact: true }).fill('Buenos Aires');
         await page.getByRole('button', { name: 'Guardar datos del cliente', exact: true }).click();
         await page.locator('#recibo-preview').waitFor();
-        assert.match(await page.locator('#recibo-preview').innerText(), /100,50/);
+        assert.match(await page.locator('#recibo-preview').innerText(), /100,5\b/);
         await page.locator('#recibo-preview img[alt="Firma"]').evaluate(img => img.decode());
         assert.ok(await page.locator('#recibo-preview img[alt="Firma"]').evaluate(img => img.naturalWidth > 0));
         assert.equal(await page.locator('.recibo-acciones-unificadas button').count(), 4);
@@ -161,7 +161,7 @@ function matches(row, url) {
         await mailDialog.waitFor();
         const mailUrl = new URL(await mailDialog.getByRole('link', { name: 'Abrir en Gmail', exact: true }).getAttribute('href'));
         assert.equal(mailUrl.origin, 'https://mail.google.com');
-        assert.match(mailUrl.searchParams.get('body'), /100,50/);
+        assert.match(mailUrl.searchParams.get('body'), /100,5\b/);
         await mailDialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
         assert.equal(clients.length, 2);
         await page.evaluate(() => window.scrollTo(0, 0));

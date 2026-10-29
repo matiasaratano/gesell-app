@@ -392,7 +392,7 @@ function FilaReserva({ reserva: r, mostrarProp }) {
           )}
           {fmtFecha(r.checkin)} → {fmtFecha(r.checkout)}
           {noches > 0 && ` · ${noches}n`}
-          {r.precio_total ? ` · $${Number(r.precio_total).toLocaleString('es-AR')}` : ''}
+          {r.precio_total ? ` · $${Number(r.precio_total).toLocaleString('es-AR', { maximumFractionDigits: 2 })}` : ''}
         </div>
       </Link>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }} onClick={e => e.stopPropagation()}>

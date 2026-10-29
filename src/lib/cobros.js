@@ -20,7 +20,16 @@ export function parseImporte(value) {
 }
 
 export const dinero = value => new Intl.NumberFormat('es-AR', {
-  style: 'currency', currency: 'ARS', maximumFractionDigits: 2,
+  style: 'currency', currency: 'ARS', minimumFractionDigits: 0, maximumFractionDigits: 2,
 }).format(value)
+export function colorCobro(r) {
+  return r.mesesPendientes?.length || r.cobro.total === null || r.cobro.estado === 'sin-sena'
+    ? 'amarilla' : r.cobro.estado === 'pagada' ? 'verde' : 'blanca'
+}
+export function compararCobros(a, b, orden = 'ingreso') {
+  const grupos = { verde: ['verde', 'amarilla', 'blanca'], amarilla: ['amarilla', 'blanca', 'verde'], blanca: ['blanca', 'verde', 'amarilla'] }[orden]
+  const diferencia = grupos ? grupos.indexOf(colorCobro(a)) - grupos.indexOf(colorCobro(b)) : 0
+  return diferencia || a.checkin.localeCompare(b.checkin) || a.id.localeCompare(b.id)
+}
 export const nombreCliente = r => `${r.clientes?.nombre || ''} ${r.clientes?.apellido || ''}`.trim() || 'Sin cliente'
 export const normalizarBusqueda = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()

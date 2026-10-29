@@ -2107,7 +2107,7 @@ function ModalDetalle({ reserva: r, color, onClose, onActualizar }) {
                 <DatoModal label="Adultos"   value={r.adultos} />
                 {r.menores > 0 && <DatoModal label="Menores" value={r.menores} />}
                 {r.mascotas  && <DatoModal label="Mascotas" value="Sí 🐾" />}
-                <DatoModal label="Total" value={r.precio_total ? `$${Number(r.precio_total).toLocaleString('es-AR')}` : '—'} highlight />
+                <DatoModal label="Total" value={r.precio_total ? `$${Number(r.precio_total).toLocaleString('es-AR', { maximumFractionDigits: 2 })}` : '—'} highlight />
                 {r.clientes?.dni      && <DatoModal label="DNI"       value={r.clientes.dni} />}
                 {r.clientes?.whatsapp && <DatoModal label="WhatsApp"  value={r.clientes.whatsapp} />}
                 {r.estado === 'cerrada' && <DatoModal label="Tipo de cierre" value={tipoCierreReserva(r)} highlight />}

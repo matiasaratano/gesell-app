@@ -67,6 +67,9 @@
 .cobros-check input { flex: 0 0 20px; accent-color: #2d5a3d; }
 .cobros-resumen-lista { display: flex; justify-content: space-between; gap: 12px; padding: 20px 0; color: #5b6760; font-size: 14px; flex-wrap: wrap; }
 .cobros-resumen-lista strong { margin-left: 8px; color: #285f42; font-size: 18px; }
+.cobros-resumen-lista { align-items: center; }
+.cobros .cobros-orden { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 13px; }
+.cobros .cobros-orden select { width: auto; max-width: 100%; margin: 0; padding: 8px; }
 .cobros-lista > li { padding: 22px 0; align-items: center; }
 .cobros-lista > li > div { flex: 1; min-width: 0; }
 .cobros-lista > li > div > strong { font-size: 17px; }

@@ -1,6 +1,23 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { resumenCobros, parseImporte } from './cobros.js'
+import { resumenCobros, parseImporte, dinero, colorCobro, compararCobros } from './cobros.js'
+
+test('los importes omiten ,00 y conservan centavos reales sin alterar el calculo', () => {
+  assert.match(dinero(350000), /350\.000$/)
+  assert.match(dinero(1250.75), /1\.250,75$/)
+  assert.doesNotMatch(dinero(0), /,/)
+  assert.equal(resumenCobros({precio_total:1250.75}, []).total,1250.75)
+})
+test('orden por color coincide con las filas y conserva ingreso dentro de cada grupo', () => {
+  const fila = (id, estado, extra = {}) => ({id,checkin:'2027-01-01',cobro:{total:1000,estado},...extra})
+  const rows = [fila('a','con-sena'),fila('b','pagada'),fila('c','sin-sena'),fila('d','pagada',{checkin:'2026-12-01'}),fila('e','pagada',{mesesPendientes:[{}]})]
+  assert.equal(colorCobro(rows[4]),'amarilla')
+  assert.equal(colorCobro(fila('f','sin-requisito',{cobro:{total:null,estado:'sin-requisito'}})),'amarilla')
+  assert.deepEqual([...rows].sort((a,b)=>compararCobros(a,b,'verde')).map(r=>r.id),['d','b','c','e','a'])
+  assert.deepEqual([...rows].sort((a,b)=>compararCobros(a,b,'amarilla')).map(r=>r.id),['c','e','a','d','b'])
+  assert.deepEqual([...rows].sort((a,b)=>compararCobros(a,b,'blanca')).map(r=>r.id),['a','d','b','c','e'])
+  assert.deepEqual([...rows].sort(compararCobros).map(r=>r.id),['d','a','b','c','e'])
+})
 
 const reserva = { checkin: '2027-01-01', checkout: '2027-01-10', precio_total: 900000 }
 test('centavos no dejan saldos residuales al completar un pago', () => {

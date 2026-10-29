@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { dinero, nombreCliente, normalizarBusqueda, resumenCobros } from '../lib/cobros'
+import { dinero, nombreCliente, normalizarBusqueda, resumenCobros, colorCobro, compararCobros } from '../lib/cobros'
 import CobrosReserva from '../components/CobrosReserva'
 import { cuotasMensuales } from '../lib/mensualidades.js'
 import './admin-listas.css'
@@ -27,6 +27,7 @@ export default function Cobros() {
   const [filtro, setFiltro] = useState('todos')
   const [propiedad, setPropiedad] = useState('')
   const [periodo, setPeriodo] = useState('proximas')
+  const [orden, setOrden] = useState('ingreso')
   const [error, setError] = useState('')
   const [cargando, setCargando] = useState(true)
   const [revision, setRevision] = useState(0)
@@ -65,7 +66,7 @@ export default function Cobros() {
     const coincide = texto.includes(busca) || (telefono.length >= 3 && String(r.clientes?.whatsapp || '').replace(/\D/g, '').includes(telefono))
     const enPeriodo = periodo === 'todas' || (periodo === 'proximas' ? r.checkout >= hoy || (filtro === 'mensualidades' && r.mesesPendientes.length > 0) : r.checkin < `${Number(periodo) + 1}-04-01` && r.checkout > `${periodo}-12-01`)
     return coincide && enPeriodo && (!propiedad || r.propiedad_id === propiedad) && (filtro === 'todos' || (filtro === 'mensualidades' && r.mesesPendientes.length > 0) || r.cobro.estado === filtro || (filtro === 'con-sena' && r.cobro.estado === 'pagada'))
-  }).sort((a, b) => a.checkin.localeCompare(b.checkin))
+  }).sort((a, b) => compararCobros(a, b, orden))
 
   if (params.get('reserva_id')) return <Navigate to={`/reservas/${params.get('reserva_id')}?vista=pagos`} replace />
   return <main className="cobros cobros-page cobros-listado">
@@ -90,12 +91,12 @@ export default function Cobros() {
       </div>
       <div className="cobros-tabs" aria-label="Estado del cobro">{Object.entries(etiquetas).map(([id, label]) => <button key={id} aria-pressed={filtro === id} onClick={() => setFiltro(id)}>{label}</button>)}</div>
       {cargando ? <p role="status">Cargando cobros…</p> : !error && <>
-        <div className="cobros-resumen-lista"><span>{lista.length} reservas</span><span>Recibido <strong>{dinero(lista.reduce((sum, r) => sum + r.cobro.recibido, 0))}</strong></span></div>
+        <div className="cobros-resumen-lista"><span>{lista.length} reservas</span><span>Recibido <strong>{dinero(lista.reduce((sum, r) => sum + r.cobro.recibido, 0))}</strong></span><label className="cobros-orden">Ordenar por<select aria-label="Ordenar por" value={orden} onChange={e => setOrden(e.target.value)}><option value="ingreso">Fecha de ingreso</option><option value="verde">Color: verdes primero</option><option value="amarilla">Color: amarillas primero</option><option value="blanca">Color: blancas primero</option></select></label></div>
         {!lista.length && <p>No hay reservas con estos filtros.</p>}
         {lista.length > 0 && <div className="admin-lista"><table className="admin-tabla admin-tabla-cobros">
-          <caption className="admin-sr-only">Señas y cobros por fecha de ingreso</caption>
+          <caption className="admin-sr-only">Señas y cobros</caption>
           <thead><tr><th>Cliente</th><th>Departamento</th><th>Ingreso / egreso</th><th>Cobro</th><th>Total estadía</th><th>Recibido</th><th>Saldo</th></tr></thead>
-          <tbody>{lista.map(r => <tr key={r.id} className={r.mesesPendientes.length || r.cobro.total === null || r.cobro.estado === 'sin-sena' ? 'admin-fila-pendiente' : r.cobro.estado === 'pagada' ? 'admin-fila-pagada' : ''}>
+          <tbody>{lista.map(r => <tr key={r.id} className={colorCobro(r) === 'amarilla' ? 'admin-fila-pendiente' : colorCobro(r) === 'verde' ? 'admin-fila-pagada' : ''}>
             <td className="admin-identidad"><Link to={`/reservas/${r.id}?vista=pagos`} aria-label={`Ver cobros de ${nombreCliente(r)}`}>{nombreCliente(r)}</Link>{r.mesesPendientes.length > 0 && <small className="admin-faltantes">{r.mesesPendientes.length} mensualidad(es) por cobrar · {dinero(r.mesesPendientes.reduce((sum, c) => sum + c.saldo, 0))}</small>}</td>
             <td data-label="Departamento">{r.propiedades?.nombre || 'Sin alojamiento'}</td>
             <td data-label="Ingreso / egreso"><span className="admin-fecha">{fecha(r.checkin)}</span><span className="admin-fecha">{fecha(r.checkout)}</span></td>

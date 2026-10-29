@@ -16,7 +16,7 @@ function ultimoDiaMes(year, month1) {
 
 function fmtPesos(n) {
   if (!n) return '$0'
-  return '$' + Number(n).toLocaleString('es-AR')
+  return '$' + Number(n).toLocaleString('es-AR', { maximumFractionDigits: 2 })
 }
 
 function fmtFecha(str) {

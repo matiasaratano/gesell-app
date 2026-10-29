@@ -12,7 +12,7 @@ const SENA = 0.3
 const WEB = 'https://www.departamentosnorte.com.ar'
 
 function fmt(n) {
-  return '$' + Number(n).toLocaleString('es-AR')
+  return '$' + Number(n).toLocaleString('es-AR', { maximumFractionDigits: 2 })
 }
 
 function calcNoches(desde, hasta) {

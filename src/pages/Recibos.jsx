@@ -141,7 +141,7 @@ function fmtCorta(str) {
 
 function fmtMonto(n) {
   if (!n) return '—';
-  return '$' + Number(n).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return '$' + Number(n).toLocaleString('es-AR', { maximumFractionDigits: 2 });
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
@@ -893,7 +893,7 @@ function PanelInquilinos({ showToast }) {
                   </td>
                   <td style={{ ...s.td, fontSize: 12 }}>
                     {r.monto
-                      ? '$' + Number(r.monto).toLocaleString('es-AR')
+                      ? '$' + Number(r.monto).toLocaleString('es-AR', { maximumFractionDigits: 2 })
                       : '—'}
                   </td>
                   <td style={{ ...s.td, whiteSpace: 'nowrap' }}>
