@@ -1,0 +1,98 @@
+// All external calls use synthetic data. Nothing is sent to production.
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'/Users/macbook/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const {mockAuth,login}=require('./auth-mock.cjs');
+const base=process.env.AUDIT_URL||'http://127.0.0.1:5174',out='/tmp/gesell-gestion-flujo';fs.mkdirSync(out,{recursive:true});
+function matches(r,u){return [...u.searchParams].every(([k,v])=>{
+ if(['select','order','limit','offset'].includes(k))return true;
+ const dot=v.indexOf('.'),op=v.slice(0,dot),val=v.slice(dot+1);
+ if(op==='eq')return String(r[k])===val;if(op==='neq')return String(r[k])!==val;
+ if(op==='in')return val.replace(/[()"]/g,'').split(',').includes(r[k]);
+ if(op==='not'&&val.startsWith('in.'))return !val.slice(3).replace(/[()"]/g,'').split(',').includes(r[k]);
+ if(op==='lt')return r[k]<val;if(op==='gt')return r[k]>val;
+ return true;
+})}
+(async()=>{
+ const browser=await chromium.launch({headless:true,executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
+ for(const width of [1440,390,320]){
+  const context=await browser.newContext({viewport:{width,height:900},locale:'es-AR'}),page=await context.newPage();
+  await page.clock.setFixedTime(new Date('2026-10-28T15:00:00Z'));
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  let clients=[{id:'c1',nombre:'Ana',dni:'123',domicilio:'Calle 1',email:'ana@example.com'},{id:'c2',nombre:'Ana',dni:'123',domicilio:'',email:'ana@example.com'},...Array.from({length:53},(_,i)=>({id:`otro-${i}`,nombre:`Persona ${String(i).padStart(2,'0')}`}))];
+  let rows=[{id:'r1',cliente_id:'c1',propiedad_id:'p1',estado:'confirmada',canal_origen:'directo',checkin:'2027-01-01',checkout:'2027-01-05',precio_total:1000,adultos:2,menores:0},...Array.from({length:204},(_,i)=>({id:`reserva-${i}`,cliente_id:clients[i%clients.length].id,propiedad_id:'p1',estado:'confirmada',canal_origen:'directo',checkin:'2027-02-01',checkout:'2027-02-03',precio_total:1000,adultos:2,menores:0}))];
+  const pagos=[{id:'pago1',reserva_id:'r1',tipo:'seña',monto:300,confirmado:true,fecha_recibido:'2026-10-28',metodo:'transferencia'}],mensajes=[],props=[{id:'p1',nombre:'Depto 1',activa:true,direccion:'Calle 1',alias_cbu:'prueba'}];
+  await context.route('**/*',async route=>{
+   if(await mockAuth(route))return;
+   const req=route.request(),u=new URL(req.url()),body=req.postDataJSON();
+   if(u.pathname.startsWith('/rest/v1/')){
+    const table=u.pathname.split('/').pop();
+    if(table==='cancelar_reserva'){Object.assign(rows.find(r=>r.id===body.p_id),{estado:'cancelada',cancelacion_motivo:body.p_motivo});return route.fulfill({json:body.p_id})}
+    if(table==='guardar_mensaje_reserva'){if(!mensajes.some(m=>m.id===body.p_id))mensajes.push({id:body.p_id,reserva_id:body.p_reserva,tipo:body.p_tipo,texto:body.p_texto,datos:body.p_datos,creado_el:'2026-10-28T15:00:00Z',enviado_el:null});return route.fulfill({json:body.p_id})}
+    if(table==='unificar_clientes'){clients=clients.filter(c=>c.id!==body.p_origen).map(c=>c.id===body.p_destino?{...c,...body.p_datos}:c);rows.forEach(r=>{if(r.cliente_id===body.p_origen)r.cliente_id=body.p_destino});return route.fulfill({json:body.p_destino})}
+    let data=table==='reservas'?rows:table==='clientes'?clients:table==='propiedades'?props:table==='pagos'?pagos:table==='reserva_mensajes'?mensajes:[];
+    data=data.filter(r=>matches(r,u));
+    if(req.method()==='PATCH')data.forEach(r=>Object.assign(r,body));
+    if(table==='reservas')data=data.map(r=>({...r,clientes:clients.find(c=>c.id===r.cliente_id),propiedades:props[0],pagos:pagos.filter(p=>p.reserva_id===r.id)}));
+    if(table==='clientes'&&u.searchParams.get('select')?.includes('reservas'))data=data.map(c=>({...c,reservas:rows.filter(r=>r.cliente_id===c.id).map(r=>({id:r.id}))}));
+    if(req.method()==='GET'){const offset=Number(u.searchParams.get('offset')||0),limit=Number(u.searchParams.get('limit')||data.length);data=data.slice(offset,offset+limit)}
+    if(req.headers().accept?.includes('vnd.pgrst.object'))data=data[0]||null;
+    return route.fulfill({json:data});
+   }
+   if(u.origin===new URL(base).origin)return route.continue();
+   return route.abort();
+  });
+  await login(page,base);
+  await page.goto(base+'/admin?seccion=reservas');
+  await page.getByRole('button',{name:'Página siguiente',exact:true}).waitFor();
+  assert.equal(await page.locator('.admin-tabla-reservas tbody tr').count(),50);
+  await page.getByRole('button',{name:'Página siguiente',exact:true}).click();
+  await page.getByText('51–100 de 205',{exact:true}).waitFor();
+  await page.goto(base+'/admin?seccion=clientes');
+  await page.getByRole('button',{name:'Página siguiente',exact:true}).waitFor();
+  assert.equal(await page.locator('.admin-tabla-clientes tbody tr').count(),50);
+  await page.getByRole('button',{name:'Ver ficha de Ana',exact:true}).first().click();
+  await page.getByRole('button',{name:'Revisar coincidencias',exact:true}).click();
+  const dup=page.getByRole('dialog',{name:'Revisar clientes coincidentes'});
+  await dup.getByRole('button',{name:'Comparar',exact:true}).click();
+  await dup.getByRole('button',{name:'Unificar clientes',exact:true}).waitFor();
+  assert.equal(await dup.getByRole('button',{name:'Unificar clientes',exact:true}).isDisabled(),true);
+  await page.screenshot({path:`${out}/${width}-comparar-clientes.png`,fullPage:true});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+  await dup.getByRole('checkbox',{name:/misma persona/}).check();
+  await dup.getByRole('button',{name:'Unificar clientes',exact:true}).click();
+  await dup.waitFor({state:'hidden'});
+  assert.equal(clients.filter(c=>c.nombre==='Ana').length,1);
+  assert.equal(pagos.length,1);
+  await page.goto(base+'/reservas/r1');
+  await page.getByRole('button',{name:'Preparar voucher',exact:true}).click();
+  await page.getByRole('button',{name:'Generar con datos actuales',exact:true}).click();
+  const texto=page.getByRole('textbox',{name:'Mensaje para WhatsApp',exact:true});
+  await texto.waitFor();assert.match(await texto.inputValue(),/300/);
+  await page.getByRole('button',{name:'Guardar versión',exact:true}).click();
+  await page.getByRole('button',{name:'Marcar como enviado',exact:true}).click();
+  await page.getByRole('button',{name:'Marcar como pendiente',exact:true}).waitFor();
+  assert.ok(mensajes[0].enviado_el);
+  await page.screenshot({path:`${out}/${width}-mensaje-vinculado.png`,fullPage:true});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+  await page.goto(base+'/mensajes?reserva_id=r1');
+  await page.getByRole('heading',{name:'Mensajes de esta reserva',exact:true}).waitFor();
+  await page.getByRole('combobox',{name:'Usar datos de una reserva'}).selectOption('');
+  await page.getByRole('button',{name:'💬 Cotización',exact:true}).waitFor();
+  await page.goto(base+'/reservas/r1');
+  await page.getByRole('button',{name:'Cancelar reserva',exact:true}).click();
+  const cancel=page.getByRole('dialog',{name:'Cancelar reserva',exact:true});
+  await cancel.getByLabel('Motivo',{exact:true}).fill('Cambio de planes del huésped');
+  await cancel.getByRole('button',{name:'Confirmar cancelación',exact:true}).click();
+  await page.getByText(/Reserva cancelada: Cambio de planes/).waitFor();
+  assert.equal(rows.find(r=>r.id==='r1').estado,'cancelada');assert.equal(pagos.length,1);
+  await page.getByRole('button',{name:'Pagos',exact:true}).click();
+  await page.locator('.cobros-totales').getByText(/\$\s*300,00/).waitFor();
+  assert.equal(await page.getByRole('button',{name:'Registrar pago',exact:true}).count(),0);
+  await page.screenshot({path:`${out}/${width}-cancelada-pagos.png`,fullPage:true});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+  assert.deepEqual(errors,[]);console.log(JSON.stringify({width,mensajes:mensajes.length,pagos:pagos.length,clientes:clients.length,errors}));
+  await context.close();
+ }
+ await browser.close();
+})().catch(e=>{console.error(e);process.exit(1)});

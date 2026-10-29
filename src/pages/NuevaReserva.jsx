@@ -1,3 +1,4 @@
+import { extraerFicha } from '../lib/extraer-ficha.js'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -89,6 +90,7 @@ export default function NuevaReserva({ onExito }) {
   const [fichaTexto, setFichaTexto] = useState('')
   const [parseando, setParseando] = useState(false)
   const [parseStatus, setParseStatus] = useState(null)
+  const [parseError, setParseError] = useState('')
 
   // Paso 3
   const [precioTotal, setPrecioTotal]   = useState('')
@@ -202,13 +204,7 @@ export default function NuevaReserva({ onExito }) {
     setParseando(true)
     setParseStatus(null)
     try {
-      const res = await fetch('https://deptos-proxy.vercel.app/api/parse', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ texto: fichaTexto }),
-      })
-      if (!res.ok) throw new Error()
-      const parsed = await res.json()
+      const parsed = await extraerFicha(fichaTexto)
       if (parsed.nombre) setClienteForm(f => ({ ...f, nombre: parsed.nombre }))
       if (parsed.dni) setClienteForm(f => ({ ...f, dni: parsed.dni }))
       if (parsed.direccion) setClienteForm(f => ({ ...f, domicilio: parsed.direccion }))
@@ -217,7 +213,7 @@ export default function NuevaReserva({ onExito }) {
       if (parsed.email) setClienteForm(f => ({ ...f, email: parsed.email }))
       setParseStatus('ok')
     } catch (e) {
-      setParseStatus('error')
+      setParseError(e.message); setParseStatus('error')
     } finally {
       setParseando(false)
     }
@@ -266,6 +262,7 @@ export default function NuevaReserva({ onExito }) {
           nombre: clienteForm.nombre.trim(), apellido: clienteForm.apellido.trim() || null,
           dni: clienteForm.dni.trim() || null, email: clienteForm.email.trim() || null,
           whatsapp: clienteForm.whatsapp.trim() || null, ciudad: clienteForm.ciudad.trim() || null,
+          domicilio: clienteForm.domicilio.trim() || null,
         } : null,
         p_pago: pago,
       })
@@ -472,7 +469,7 @@ export default function NuevaReserva({ onExito }) {
                   <div style={{ marginTop: 8, padding: '8px 12px', background: '#e8f0eb', color: '#2d7a4f', borderRadius: 6, fontSize: 12 }}>Datos extraídos</div>
                 )}
                 {parseStatus === 'error' && (
-                  <div style={{ marginTop: 8, padding: '8px 12px', background: '#fdf0ef', color: '#c0392b', borderRadius: 6, fontSize: 12 }}>Error al extraer</div>
+                  <div style={{ marginTop: 8, padding: '8px 12px', background: '#fdf0ef', color: '#c0392b', borderRadius: 6, fontSize: 12 }}>{parseError || 'Error al extraer'}</div>
                 )}
               </div>
 

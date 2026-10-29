@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { leerListado } from '../lib/listados.js'
+import MensajesReserva from '../components/MensajesReserva'
 import { detalleSolicitud, voucherSolicitud, datosVoucherReserva, fechaSolicitud, rangoFechas } from '../lib/solicitudes.js'
 
 const voucherVacio = () => ({titular:'',checkin:'',checkout:'',adultos:'2',menores:'0',total:'',pagado:'',verificado:false})
@@ -133,6 +136,15 @@ function problemasVoucher(v) {
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 export default function GeneradorMensajes() {
+  const [params, setParams] = useSearchParams()
+  const reservaVinculada = params.get('reserva_id') || ''
+  const [opcionesReserva, setOpcionesReserva] = useState([])
+  const [errorReservas, setErrorReservas] = useState('')
+  useEffect(() => {
+    let activo = true
+    leerListado(() => supabase.from('reservas').select('id,checkin,checkout,clientes(nombre,apellido),propiedades(nombre)').not('estado', 'in', '("cerrada","cancelada")').order('checkin', { ascending: false }).order('id')).then(rows => { if (activo) setOpcionesReserva(rows) }).catch(() => { if (activo) setErrorReservas('No se pudieron cargar las reservas. Podés continuar con la carga manual.') })
+    return () => { activo = false }
+  }, [])
   const [tab,        setTabState]  = useState('cotizacion')
   const [props,      setProps]     = useState([])
   const [propId,     setPropId]    = useState('')
@@ -328,6 +340,8 @@ export default function GeneradorMensajes() {
         <h1 style={s.h1}>Mensajes</h1>
         <span style={s.headerSub}>Departamentos Norte</span>
       </header>
+      <div className="cobros" style={{ marginBottom: 16 }}><label>Usar datos de una reserva<select value={reservaVinculada} onChange={e => setParams(e.target.value ? { reserva_id: e.target.value } : {})}><option value="">Carga manual de plantillas</option>{opcionesReserva.map(r => <option key={r.id} value={r.id}>{[r.clientes?.nombre, r.clientes?.apellido].filter(Boolean).join(' ') || 'Sin cliente'} · {r.propiedades?.nombre} · {fechaSolicitud(r.checkin)}</option>)}</select></label>{errorReservas && <p role="alert">{errorReservas}</p>}</div>
+      {reservaVinculada ? <><Link to={`/reservas/${reservaVinculada}`}>Ver reserva</Link><MensajesReserva key={reservaVinculada} reservaId={reservaVinculada} tipoInicial={params.get('tipo')} /></> : <>
 
       {/* Tabs */}
       <div style={s.card}>
@@ -562,6 +576,7 @@ export default function GeneradorMensajes() {
       )}
 
       {/* Toast */}
+      </>}
       {toast && <div className="app-toast" role="status" style={{ ...s.toast, ...s.toastShow }}>{toast}</div>}
     </div>
   )

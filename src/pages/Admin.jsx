@@ -1,3 +1,4 @@
+import { extraerFicha } from '../lib/extraer-ficha.js'
 import { useState, useEffect, useRef } from 'react'
 import { supabase, supabaseAutomatico } from '../lib/supabase'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
@@ -6,6 +7,11 @@ import { useConfirmacion } from '../lib/confirmacion.js'
 import { avisoCapacidad } from '../lib/capacidad.js'
 import './admin-listas.css'
 import { confirmarClienteNuevo } from '../lib/clientes-duplicados.js'
+import { reservaDesdeCierre } from '../lib/calendario-grid.js'
+import { leerListado } from '../lib/listados.js'
+import Paginacion from '../components/Paginacion'
+import { usePagina } from '../lib/use-pagina.js'
+import RevisarClientes from '../components/RevisarClientes'
 
 const SECCIONES = [
   { id: 'propiedades', label: '🏠 Propiedades' },
@@ -284,7 +290,7 @@ export function CRUDReservas({ reservaInicial = null, onSaved, onCancel, onDelet
   useEffect(() => {
     if (editando && clientes.length > 0) {
       const c = clientes.find(x => x.id === editando.cliente_id)
-      setBusquedaCli(c ? `${c.nombre} ${c.apellido || ''}` : '')
+      setBusquedaCli(c ? `${c.nombre} ${c.apellido || ''}`.trim() : '')
     } else {
       setBusquedaCli('')
     }
@@ -293,6 +299,7 @@ export function CRUDReservas({ reservaInicial = null, onSaved, onCancel, onDelet
   const [guardando,    setGuardando]    = useState(false)
   const [toast,        setToast]        = useState('')
   const [filtroEstado, setFiltroEstado] = useState('operativas')
+  const [errorLista, setErrorLista] = useState('')
   const [filtroProp,   setFiltroProp]   = useState('todas')
   const [ordenRes,     setOrdenRes]     = useState('checkin_asc')
 
@@ -300,59 +307,24 @@ export function CRUDReservas({ reservaInicial = null, onSaved, onCancel, onDelet
   const [nuevoCliData, setNuevoCliData] = useState({
     nombre: '', apellido: '', whatsapp: '', dni: '', email: '', ciudad: ''
   })
-  const [guardandoCliRapido, setGuardandoCliRapido] = useState(false)
 
   const [searchParams] = useSearchParams()
   const editReservaId = searchParams.get('reserva_id')
 
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(''), 2200) }
 
-  async function guardarNuevoClienteRapido(e) {
-    if (e) e.preventDefault()
-    if (guardandoCliRapido) return
-    if (!nuevoCliData.nombre.trim()) {
-      showToast('El nombre del cliente es obligatorio')
-      return
-    }
-    setGuardandoCliRapido(true)
-    try {
-      if (!await confirmarClienteNuevo(supabase, nuevoCliData, confirmar)) {
-        setGuardandoCliRapido(false)
-        return
-      }
-    } catch (error) {
-      setGuardandoCliRapido(false)
-      showToast(error.message)
-      return
-    }
-    const { data, error } = await supabase
-      .from('clientes')
-      .insert({
-        nombre: nuevoCliData.nombre.trim(),
-        apellido: nuevoCliData.apellido.trim() || null,
-        whatsapp: nuevoCliData.whatsapp.trim() || null,
-        dni: nuevoCliData.dni.trim() || null,
-        email: nuevoCliData.email.trim() || null,
-        ciudad: nuevoCliData.ciudad.trim() || null,
-      })
-      .select()
-      .single()
-
-    setGuardandoCliRapido(false)
-    if (error) {
-      showToast('Error al crear cliente: ' + error.message)
-      return
-    }
-
-    const clienteCreado = data
-    setClientes(prev => [...prev, clienteCreado].sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '')))
-    setEditando(prev => ({ ...prev, cliente_id: clienteCreado.id }))
-    setBusquedaCli(`${clienteCreado.nombre} ${clienteCreado.apellido || ''}`.trim())
+  function seleccionarClienteReserva(cliente) {
+    setEditando(prev => ({ ...reservaDesdeCierre(prev), cliente_id: cliente.id }))
+    setBusquedaCli(`${cliente.nombre} ${cliente.apellido || ''}`.trim())
     setMostrarDropdownCli(false)
+  }
+
+  function clienteCreado(cliente) {
+    setClientes(prev => [...prev, cliente].sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '')))
+    seleccionarClienteReserva(cliente)
     setCreandoCliModal(false)
     showToast('✓ Cliente creado. Guardá la reserva para confirmar la asignación.')
   }
-
   async function cargar() {
     setLoading(true)
     const hoy = hoyStr()
@@ -365,19 +337,16 @@ export function CRUDReservas({ reservaInicial = null, onSaved, onCancel, onDelet
       .lt('checkout', hoy)
       .not('estado', 'in', '("finalizada","cancelada","cerrada")')
 
-    const [resRes, resProp, resClientes] = await Promise.all([
-      supabase
-        .from('reservas')
-        .select('*, clientes(nombre, apellido, whatsapp), propiedades(id, nombre)')
-        .order('checkin', { ascending: true })
-        .limit(200),
-      supabase.from('propiedades').select('id, nombre, capacidad_max').order('nombre'),
-      supabase.from('clientes').select('id, nombre, apellido, dni').order('nombre')
-    ])
-    setLista(resRes.data ?? [])
-    setPropiedades(resProp.data ?? [])
-    setClientes(resClientes.data ?? [])
-    setLoading(false)
+    setErrorLista('')
+    try {
+      const [reservas, propiedades, clientes] = await Promise.all([
+        leerListado(() => supabase.from('reservas').select('*, clientes(nombre, apellido, whatsapp), propiedades(id, nombre)').order('checkin').order('id')),
+        leerListado(() => supabase.from('propiedades').select('id, nombre, capacidad_max').order('nombre').order('id')),
+        leerListado(() => supabase.from('clientes').select('id, nombre, apellido, dni').order('nombre').order('id')),
+      ])
+      setLista(reservas); setPropiedades(propiedades); setClientes(clientes)
+    } catch { setErrorLista('No se pudieron cargar las reservas. Reintentá.') }
+    finally { setLoading(false) }
   }
 
   useEffect(() => { cargar() }, [])
@@ -520,6 +489,34 @@ export function CRUDReservas({ reservaInicial = null, onSaved, onCancel, onDelet
     canal_origen: 'directo',
   }
 
+  const reservasFiltradas = lista
+    .filter(r => {
+      if (filtroProp !== 'todas' && r.propiedad_id !== filtroProp) return false
+      if (filtroEstado === 'operativas') {
+        return ['pendiente', 'confirmada', 'señada', 'activa'].includes(r.estado)
+      }
+      if (filtroEstado === 'cierres') return r.estado === 'cerrada'
+      if (filtroEstado === 'cierres_manual') return esCierreManual(r)
+      if (filtroEstado === 'cierres_booking') return r.estado === 'cerrada' && r.canal_origen === 'booking'
+      if (filtroEstado === 'finalizadas') return r.estado === 'finalizada'
+      if (filtroEstado !== 'todas' && r.estado !== filtroEstado) return false
+      return true
+    })
+    .sort((a, b) => {
+      if (ordenRes === 'checkin_asc') return (a.checkin || '').localeCompare(b.checkin || '')
+      if (ordenRes === 'checkin_desc') return (b.checkin || '').localeCompare(a.checkin || '')
+      if (ordenRes === 'created_desc') return (b.created_at || '').localeCompare(a.created_at || '')
+      return 0
+    })
+
+  const paginacionReservas = usePagina(reservasFiltradas, `${filtroProp}|${filtroEstado}|${ordenRes}`)
+
+  if (creandoCliModal) return <CRUDClientes
+    clienteInicial={nuevoCliData}
+    onCancel={() => setCreandoCliModal(false)}
+    onCreated={clienteCreado}
+  />
+
   if (editando) return (
     <div style={s.card}>
       <div style={s.cardHeader}>
@@ -577,9 +574,7 @@ export function CRUDReservas({ reservaInicial = null, onSaved, onCancel, onDelet
                 <div
                   key={c.id}
                   onClick={() => {
-                    setEditando(p => ({ ...p, cliente_id: c.id }))
-                    setBusquedaCli(`${c.nombre} ${c.apellido || ''}`)
-                    setMostrarDropdownCli(false)
+                    seleccionarClienteReserva(c)
                   }}
                   style={{
                     padding: '8px 12px', cursor: 'pointer', fontSize: 13,
@@ -675,71 +670,6 @@ export function CRUDReservas({ reservaInicial = null, onSaved, onCancel, onDelet
         </button>
       </div>
 
-      {/* Modal de alta rápida de cliente dentro del formulario de reserva */}
-      {creandoCliModal && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.5)', zIndex: 999,
-          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16
-        }}>
-          <div style={{ background: '#fff', borderRadius: 12, padding: 20, width: '100%', maxWidth: 450, boxShadow: '0 8px 24px rgba(0,0,0,0.2)' }}>
-            <h4 style={{ margin: '0 0 14px 0', fontSize: 16, fontWeight: 600, color: '#2d5a3d' }}>Alta rápida de cliente</h4>
-            <form onSubmit={guardarNuevoClienteRapido} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 500, color: '#444' }}>Nombre *</label>
-                <input
-                  type="text" required style={s.input}
-                  value={nuevoCliData.nombre}
-                  onChange={e => setNuevoCliData(p => ({ ...p, nombre: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 500, color: '#444' }}>Apellido</label>
-                <input
-                  type="text" style={s.input}
-                  value={nuevoCliData.apellido}
-                  onChange={e => setNuevoCliData(p => ({ ...p, apellido: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 500, color: '#444' }}>WhatsApp / Teléfono</label>
-                <input
-                  type="text" style={s.input} placeholder="Ej: 1112345678"
-                  value={nuevoCliData.whatsapp}
-                  onChange={e => setNuevoCliData(p => ({ ...p, whatsapp: e.target.value }))}
-                />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div>
-                  <label style={{ fontSize: 12, fontWeight: 500, color: '#444' }}>DNI</label>
-                  <input
-                    type="text" style={s.input}
-                    value={nuevoCliData.dni}
-                    onChange={e => setNuevoCliData(p => ({ ...p, dni: e.target.value }))}
-                  />
-                </div>
-                <div>
-                  <label style={{ fontSize: 12, fontWeight: 500, color: '#444' }}>Ciudad</label>
-                  <input
-                    type="text" style={s.input}
-                    value={nuevoCliData.ciudad}
-                    onChange={e => setNuevoCliData(p => ({ ...p, ciudad: e.target.value }))}
-                  />
-                </div>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
-                <button type="button" style={s.btnCancelar} onClick={() => setCreandoCliModal(false)}>
-                  Cancelar
-                </button>
-                <button type="submit" style={s.btnPrimario} disabled={guardandoCliRapido}>
-                  {guardandoCliRapido ? 'Guardando…' : '✓ Crear y seleccionar cliente'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
       <Toast msg={toast} />
     </div>
   )
@@ -750,25 +680,6 @@ export function CRUDReservas({ reservaInicial = null, onSaved, onCancel, onDelet
     return `${d}/${m}/${y}`
   }
 
-  const reservasFiltradas = lista
-    .filter(r => {
-      if (filtroProp !== 'todas' && r.propiedad_id !== filtroProp) return false
-      if (filtroEstado === 'operativas') {
-        return ['pendiente', 'confirmada', 'señada', 'activa'].includes(r.estado)
-      }
-      if (filtroEstado === 'cierres') return r.estado === 'cerrada'
-      if (filtroEstado === 'cierres_manual') return esCierreManual(r)
-      if (filtroEstado === 'cierres_booking') return r.estado === 'cerrada' && r.canal_origen === 'booking'
-      if (filtroEstado === 'finalizadas') return r.estado === 'finalizada'
-      if (filtroEstado !== 'todas' && r.estado !== filtroEstado) return false
-      return true
-    })
-    .sort((a, b) => {
-      if (ordenRes === 'checkin_asc') return (a.checkin || '').localeCompare(b.checkin || '')
-      if (ordenRes === 'checkin_desc') return (b.checkin || '').localeCompare(a.checkin || '')
-      if (ordenRes === 'created_desc') return (b.created_at || '').localeCompare(a.created_at || '')
-      return 0
-    })
 
   return (
     <div>
@@ -808,7 +719,7 @@ export function CRUDReservas({ reservaInicial = null, onSaved, onCancel, onDelet
           {reservasFiltradas.length > 0 && <table className="admin-tabla admin-tabla-reservas">
             <caption className="admin-sr-only">Reservas ordenadas según el filtro seleccionado</caption>
             <thead><tr><th>Cliente</th><th>Ingreso</th><th>Egreso</th><th>Departamento</th><th>Estado</th><th>Precio total</th><th><span className="admin-sr-only">Acciones</span></th></tr></thead>
-            <tbody>{reservasFiltradas.map(r => {
+            <tbody>{paginacionReservas.visibles.map(r => {
             const cierre = r.estado === 'cerrada'
             const faltantes = cierre || r.estado === 'cancelada' ? [] : [
               !r.cliente_id && 'Falta cliente',
@@ -829,6 +740,8 @@ export function CRUDReservas({ reservaInicial = null, onSaved, onCancel, onDelet
         </div>
       )}
 
+      <Paginacion {...paginacionReservas} />
+      {errorLista && <p role="alert">{errorLista} <button onClick={cargar}>Reintentar</button></p>}
       {detalle && !editando && (
         <ModalDetalleReserva
           reserva={detalle}
@@ -981,12 +894,13 @@ function DatoModal({ label, value, highlight }) {
 }
 
 // ─── CLIENTES ─────────────────────────────────────────────────────────────────
-function CRUDClientes() {
+function CRUDClientes({ clienteInicial = null, onCancel, onCreated } = {}) {
+  const [revisando, setRevisando] = useState(false)
   const cargaId = useRef(0)
   const confirmar = useConfirmacion()
   const [lista,    setLista]    = useState([])
   const [loading,  setLoading]  = useState(true)
-  const [editando, setEditando] = useState(null)
+  const [editando, setEditando] = useState(clienteInicial)
   const [guardando,setGuardando]= useState(false)
   const [toast,    setToast]    = useState('')
   const [busqueda, setBusqueda] = useState('')
@@ -1019,22 +933,23 @@ function CRUDClientes() {
   async function cargar(q = '') {
     const id = ++cargaId.current
     setLoading(true)
-    let query = supabase.from('clientes').select(filtroReservas === 'con' ? '*, reservas!inner(id)' : '*, reservas(id)').order('nombre')
-    if (filtroReservas === 'sin') query = query.is('reservas', null)
-    if (q.length >= 2) {
-      query = query.or(`nombre.ilike.%${q}%,apellido.ilike.%${q}%,dni.ilike.%${q}%`)
-    }
-    const { data, error } = await query.limit(100)
-    if (id !== cargaId.current) return
-    setLista((data ?? []).map(({ reservas, ...cliente }) => cliente))
-    if (error) showToast('No se pudieron cargar los clientes. Reintentá.')
-    setLoading(false)
+    try {
+      const data = await leerListado(() => {
+        let query = supabase.from('clientes').select(filtroReservas === 'con' ? '*, reservas!inner(id)' : '*, reservas(id)').order('nombre').order('id')
+        if (filtroReservas === 'sin') query = query.is('reservas', null)
+        if (q.length >= 2) query = query.or(`nombre.ilike.%${q}%,apellido.ilike.%${q}%,dni.ilike.%${q}%`)
+        return query
+      })
+      if (id === cargaId.current) setLista(data.map(({ reservas, ...cliente }) => cliente))
+    } catch { if (id === cargaId.current) showToast('No se pudieron cargar los clientes. Reintentá.') }
+    finally { if (id === cargaId.current) setLoading(false) }
   }
 
   useEffect(() => {
+    if (clienteInicial) return
     const t = setTimeout(() => cargar(busqueda), busqueda ? 300 : 0)
     return () => { clearTimeout(t); cargaId.current++ }
-  }, [busqueda, filtroReservas])
+  }, [busqueda, filtroReservas, clienteInicial])
 
   async function guardar() {
     if (guardando) return
@@ -1057,11 +972,12 @@ function CRUDClientes() {
         return
       }
     }
-    const { error } = id
+    const { data, error } = id
       ? await supabase.from('clientes').update(campos).eq('id', id)
-      : await supabase.from('clientes').insert(campos)
+      : await supabase.from('clientes').insert(campos).select().single()
     setGuardando(false)
     if (error) { showToast('Error: ' + error.message); return }
+    if (onCreated) { onCreated(data); return }
     showToast('✓ Cliente guardado')
     setEditando(null)
     cargar(busqueda)
@@ -1086,15 +1002,7 @@ function CRUDClientes() {
     setParseStatus(null)
 
     try {
-      const res = await fetch('https://deptos-proxy.vercel.app/api/parse', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ texto: fichaTexto }),
-      })
-
-      if (!res.ok) throw new Error('HTTP ' + res.status)
-
-      const parsed = await res.json()
+      const parsed = await extraerFicha(fichaTexto)
 
       if (parsed.nombre) setEditando(e => ({ ...e, nombre: parsed.nombre }))
       if (parsed.dni) setEditando(e => ({ ...e, dni: parsed.dni }))
@@ -1107,7 +1015,7 @@ function CRUDClientes() {
       setParseMsg('Datos extraídos correctamente')
     } catch (err) {
       setParseStatus('error')
-      setParseMsg('No se pudieron extraer los datos')
+      setParseMsg(err.message || 'No se pudieron extraer los datos')
     } finally {
       setParseando(false)
     }
@@ -1125,12 +1033,30 @@ function CRUDClientes() {
 
   const vacio = { nombre:'', dni:'', email:'', whatsapp:'', domicilio:'', ciudad:'', vehiculo_patente:'', notas:'', es_repetidor: false }
 
+  const listaProcesada = lista
+    .filter(c => {
+      if (filtroRepetidor === 'repetidores' && !c.es_repetidor) return false
+      return true
+    })
+    .sort((a, b) => {
+      if (ordenarPor === 'recientes') {
+        return new Date(b.created_at || 0) - new Date(a.created_at || 0)
+      }
+      const nombreA = `${a.nombre || ''} ${a.apellido || ''}`.toLowerCase()
+      const nombreB = `${b.nombre || ''} ${b.apellido || ''}`.toLowerCase()
+      return nombreA.localeCompare(nombreB)
+    })
+
+  const paginacionClientes = usePagina(listaProcesada, `${busqueda}|${filtroReservas}|${filtroRepetidor}|${ordenarPor}`)
+
   if (editando !== null) return (
     <div style={s.card}>
       <div style={s.cardHeader}>
         <h3 style={s.cardTitulo}>{editando.id ? 'Editar cliente' : 'Nuevo cliente'}</h3>
-        <button style={s.btnCancelar} onClick={() => setEditando(null)}>Cancelar</button>
+        <button style={s.btnCancelar} onClick={() => onCancel ? onCancel() : setEditando(null)}>Cancelar</button>
       </div>
+      {editando.id && <div className="cobros cobros-acciones"><button onClick={() => setRevisando(true)}>Revisar coincidencias</button></div>}
+      {revisando && <RevisarClientes clienteId={editando.id} onClose={() => setRevisando(false)} onSaved={cliente => { setEditando(cliente); setRevisando(false); cargar(busqueda); showToast('Clientes unificados. Se conservaron las reservas y los pagos.') }} />}
 
       {/* IA Parser para nuevo cliente */}
       {!editando.id && (
@@ -1166,6 +1092,7 @@ function CRUDClientes() {
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, cursor: 'pointer', marginTop: 8 }}>
             <input
               type="checkbox"
+              style={{ width: 20, height: 20, minHeight: 20, flex: '0 0 20px' }}
               checked={!!editando.es_repetidor}
               onChange={e => setEditando(p => ({ ...p, es_repetidor: e.target.checked }))}
             />
@@ -1215,28 +1142,15 @@ function CRUDClientes() {
             Eliminar
           </button>
         )}
-        <button style={s.btnCancelar} onClick={() => setEditando(null)}>Cancelar</button>
+        <button style={s.btnCancelar} onClick={() => onCancel ? onCancel() : setEditando(null)}>Cancelar</button>
         <button style={s.btnPrimario} onClick={guardar} disabled={guardando}>
-          {guardando ? 'Guardando…' : '✓ Guardar'}
+          {guardando ? 'Guardando…' : onCreated ? 'Crear y seleccionar cliente' : '✓ Guardar'}
         </button>
       </div>
       <Toast msg={toast} />
     </div>
   )
 
-  const listaProcesada = lista
-    .filter(c => {
-      if (filtroRepetidor === 'repetidores' && !c.es_repetidor) return false
-      return true
-    })
-    .sort((a, b) => {
-      if (ordenarPor === 'recientes') {
-        return new Date(b.created_at || 0) - new Date(a.created_at || 0)
-      }
-      const nombreA = `${a.nombre || ''} ${a.apellido || ''}`.toLowerCase()
-      const nombreB = `${b.nombre || ''} ${b.apellido || ''}`.toLowerCase()
-      return nombreA.localeCompare(nombreB)
-    })
 
   return (
     <div>
@@ -1270,7 +1184,7 @@ function CRUDClientes() {
           {listaProcesada.length > 0 && <table className="admin-tabla admin-tabla-clientes">
             <caption className="admin-sr-only">Clientes</caption>
             <thead><tr><th>Cliente</th><th>WhatsApp</th><th>Correo electrónico</th><th>DNI</th></tr></thead>
-            <tbody>{listaProcesada.map(c => {
+            <tbody>{paginacionClientes.visibles.map(c => {
               const sinContacto = !c.whatsapp?.trim() && !c.email?.trim()
               return <tr key={c.id} className={sinContacto ? 'admin-fila-pendiente' : ''}>
                 <td className="admin-identidad"><button className="admin-nombre" onClick={() => setEditando({ ...c })} aria-label={`Ver ficha de ${c.nombre} ${c.apellido || ''}`} title={sinContacto ? 'Sin datos de contacto' : undefined}>{c.nombre} {c.apellido}</button>{c.es_repetidor && <small>Repetidor</small>}</td>
@@ -1282,6 +1196,7 @@ function CRUDClientes() {
           </table>}
         </div>
       )}
+      <Paginacion {...paginacionClientes} />
       <div style={{ padding: '8px 0', fontSize: 12, color: '#888', textAlign: 'right' }}>{listaProcesada.length} cliente(s) filtrado(s)</div>
       <Toast msg={toast} />
     </div>

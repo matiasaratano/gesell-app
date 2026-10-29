@@ -9,6 +9,13 @@ test('ticket temporal excluye mensuales, cierres y canceladas del importe y del 
   assert.equal(ticketTemporal([mensual], '2026-09-01', '2026-09-30'),null)
   assert.equal(ticketTemporal([temporal], '2026-10-01', '2026-10-31'),null)
 })
+test('una reserva sin precio no cuenta como ingreso cero en el ticket', () => {
+  const temporal = { ...reserva, checkin: '2027-01-01', checkout: '2027-01-06', precio_total: 100000 }
+  for (const precio_total of [null, '', 0, -10, 'incorrecto']) {
+    assert.equal(ticketTemporal([temporal, { ...temporal, precio_total }], '2027-01-01', '2027-01-31'), 100000)
+    assert.equal(ticketTemporal([{ ...temporal, precio_total }], '2027-01-01', '2027-01-31'), null)
+  }
+})
 test('mensual usa cuota acordada y no promedio por noche del total', () => {
   assert.equal(valorEnPeriodo(mensual,'2026-09-01','2026-09-30'),350000)
   assert.equal(valorEnPeriodo(mensual,'2026-10-01','2026-10-31'),400000)

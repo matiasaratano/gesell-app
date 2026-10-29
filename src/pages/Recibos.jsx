@@ -1,3 +1,4 @@
+import { extraerFicha } from '../lib/extraer-ficha.js'
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { direccionAlojamiento } from '../lib/direccion-alojamiento.js';
@@ -283,19 +284,7 @@ function PanelRecibo({ showToast, reserva = null, pago = null, verificar, verifi
     setParseStatus(null);
 
     try {
-      const res = await fetch('https://deptos-proxy.vercel.app/api/parse', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          texto: fichaTexto, // 👈 único dato que mandás
-        }),
-      });
-
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-
-      const parsed = await res.json(); // 👈 ya viene limpio
+      const parsed = await extraerFicha(fichaTexto)
 
       if (parsed.nombre) setNombre(parsed.nombre);
       if (parsed.dni) setDni(parsed.dni);
@@ -311,7 +300,7 @@ function PanelRecibo({ showToast, reserva = null, pago = null, verificar, verifi
     } catch (err) {
       setParseStatus('error');
       setParseMsg(
-        'No se pudieron extraer los datos. Revisá el texto o completá manualmente.'
+        err.message || 'No se pudieron extraer los datos. Revisá el texto o completá manualmente.'
       );
     } finally {
       setParseando(false);

@@ -13,5 +13,5 @@ export function celdasMes(year, month) {
 
 export function reservaDesdeCierre(reserva) {
   if (reserva.estado !== 'cerrada') return { ...reserva }
-  return { ...reserva, estado: 'confirmada', canal_origen: 'directo' }
+  return { ...reserva, estado: 'pendiente', canal_origen: 'directo' }
 }

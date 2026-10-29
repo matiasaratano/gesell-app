@@ -60,6 +60,9 @@ a { color: var(--ui-primary); }
 .app-nav { align-items: center; }
 .app-nav-mobile { display: none; }
 .reserva-cierre-aviso { margin-bottom: 16px; }
+.ficha-proxima { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 12px 0; margin: 8px 0 16px; border-top: 1px solid #dde5df; border-bottom: 1px solid #dde5df; }
+.ficha-proxima small { color: #637068; }
+.ficha-proxima p { margin: 4px 0 0; }
 .reserva-cierre-aviso p + p, .reserva-cierre-aviso button { margin-top: 8px; }
 .reserva-cierre-aviso ul { margin: 10px 0; padding-left: 20px; }
 .reserva-cierre-aviso .cobros-check { align-items: flex-start; line-height: 1.5; }

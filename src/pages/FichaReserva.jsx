@@ -4,11 +4,14 @@ import { supabase } from '../lib/supabase'
 import { CRUDReservas } from './Admin'
 import CobrosReserva from '../components/CobrosReserva'
 import { nombreCliente } from '../lib/cobros.js'
-import { hoyLocal, mensajeReserva } from '../lib/operacion-reserva.js'
+import { hoyLocal } from '../lib/operacion-reserva.js'
 import { reservaDesdeCierre } from '../lib/calendario-grid.js'
 import { cierreImportadoDisponible } from '../lib/disponibilidad-solicitud.js'
 import { mesAnterior, sumarDias } from '../lib/mensualidades.js'
 import { useConfirmacion } from '../lib/confirmacion.js'
+import CancelarReserva from '../components/CancelarReserva'
+import MensajesReserva from '../components/MensajesReserva'
+import { proximaAccion } from '../lib/proxima-accion.js'
 
 const fecha = value => value?.slice(0, 10).split('-').reverse().join('/') || '—'
 const plataformas = {
@@ -22,7 +25,7 @@ const valorHistorial = (key, value) => {
   if (typeof value === 'boolean') return value ? 'Sí' : 'No'
   return String(value)
 }
-const campos = { checkin: 'Ingreso', checkout: 'Salida', estado: 'Estado', canal_origen: 'Canal', precio_total: 'Precio total', modalidad: 'Tipo de alquiler', requiere_sena: 'Requiere seña', recordar_el: 'Recordatorio', limpieza_completada_para: 'Limpieza completada', notas_internas: 'Notas', adultos: 'Adultos', menores: 'Menores', monto: 'Importe', tipo: 'Concepto', fecha_recibido: 'Fecha de cobro', metodo: 'Medio de pago', confirmado: 'Pago contabilizado', periodo_mes: 'Mes abonado' }
+const campos = { checkin: 'Ingreso', checkout: 'Salida', estado: 'Estado', cancelacion_motivo: 'Motivo de cancelación', canal_origen: 'Canal', precio_total: 'Precio total', modalidad: 'Tipo de alquiler', requiere_sena: 'Requiere seña', recordar_el: 'Recordatorio', limpieza_completada_para: 'Limpieza completada', notas_internas: 'Notas', adultos: 'Adultos', menores: 'Menores', monto: 'Importe', tipo: 'Concepto', fecha_recibido: 'Fecha de cobro', metodo: 'Medio de pago', confirmado: 'Pago contabilizado', periodo_mes: 'Mes abonado' }
 function cambios(entry) {
   if (entry.accion === 'INSERT') return entry.tabla === 'pagos' ? 'Pago registrado' : 'Reserva creada'
   if (entry.accion === 'DELETE') return entry.tabla === 'pagos' ? 'Pago eliminado' : 'Reserva eliminada'
@@ -51,10 +54,12 @@ function FichaReserva() {
   const [mensaje, setMensaje] = useState('')
   const [loading, setLoading] = useState(true)
   const [revision, setRevision] = useState(0)
-  const [tab, setTab] = useState(params.get('vista') === 'pagos' ? 'pagos' : 'datos')
+  const [tab, setTab] = useState(['pagos', 'mensaje'].includes(params.get('vista')) ? params.get('vista') : 'datos')
+  const [cancelando, setCancelando] = useState(false)
+  const [mensajes, setMensajes] = useState(null)
+  const [tipoMensaje, setTipoMensaje] = useState(params.get('tipo') || 'detalle')
   const [editor, setEditor] = useState(null)
   const [recordar, setRecordar] = useState('')
-  const [borrador, setBorrador] = useState(null)
   const [guardando, setGuardando] = useState(false)
   const [abrir, setAbrir] = useState(false)
   const [historial, setHistorial] = useState([])
@@ -62,6 +67,11 @@ function FichaReserva() {
   const [limite, setLimite] = useState(30)
 
   function recargar() { setRevision(v => v + 1) }
+  useEffect(() => {
+    let activo = true
+    supabase.from('reserva_mensajes').select('tipo,enviado_el').eq('reserva_id', id).then(({ data, error }) => { if (activo) setMensajes(error ? null : data) })
+    return () => { activo = false }
+  }, [id, revision])
   useEffect(() => {
     let active = true
     Promise.all([
@@ -127,11 +137,11 @@ function FichaReserva() {
   if (loading) return <main className="cobros cobros-page"><p role="status">Cargando reserva…</p></main>
   if (!reserva) return <main className="cobros cobros-page"><p role="alert">{error}</p><button onClick={recargar}>Reintentar</button></main>
   if (editor) return <main className="cobros cobros-page"><CRUDReservas key={editor.id} reservaInicial={editor} onSaved={() => { setEditor(null); recargar() }} onCancel={() => setEditor(null)} onDeleted={() => navigate('/calendario')} /></main>
-  const texto = borrador ?? mensajeReserva(reserva, pagos)
   const cerrada = reserva.estado === 'cerrada'
   const manual = ['directo', 'manual'].includes(reserva.canal_origen)
   const plataforma = plataformas[reserva.canal_origen]
   const limpia = reserva.limpieza_completada_para === reserva.checkout
+  const siguiente = proximaAccion(reserva, pagos, mensajes)
   return <main className="cobros cobros-page ficha-reserva">
     <header className="ficha-cabecera">
     <h1 className="ficha-titulo">{cerrada ? `Cierre ${manual ? 'manual' : reserva.canal_origen}` : nombreCliente(reserva)}</h1>
@@ -146,8 +156,12 @@ function FichaReserva() {
         ? <Link className="cobros-link" to={`/nueva?cierre_id=${reserva.id}`}>Crear reserva dentro de este cierre</Link>
         : <button className="cobros-primary" onClick={() => setEditor(reservaDesdeCierre(reserva))}>Asignar inquilino</button>)}
       {cerrada && manual && <button onClick={() => setAbrir(true)}>Abrir cierre manual</button>}
-      <button className="cobros-danger" disabled={guardando} onClick={eliminarReserva}>Eliminar reserva</button>
+      {!cerrada && reserva.estado !== 'cancelada' && <button className="cobros-danger" disabled={guardando} onClick={() => setCancelando(true)}>Cancelar reserva</button>}
+      {!pagos.length && !mensajes?.length && <button className="cobros-danger" disabled={guardando} onClick={eliminarReserva}>Eliminar reserva</button>}
     </div>
+    {cancelando && <CancelarReserva reserva={reserva} onClose={() => setCancelando(false)} onSaved={() => { setCancelando(false); setMensaje('Reserva cancelada. Se conservaron los registros de pago.'); recargar() }} />}
+    {reserva.estado === 'cancelada' && <p className="cobros-aviso">Reserva cancelada{reserva.cancelacion_motivo ? `: ${reserva.cancelacion_motivo}` : ''}. Los pagos registrados se conservan.</p>}
+    {siguiente && <section className="ficha-proxima"><div><small>Próxima acción</small><p>{siguiente.texto}</p></div><button className="cobros-primary" onClick={() => { if (siguiente.accion === 'editar') setEditor(reserva); else { setTipoMensaje(siguiente.tipo || 'detalle'); setTab(siguiente.accion) } }}>{siguiente.boton}</button></section>}
     {abrir && <div className="cobros-aviso"><p>¿Abrir este cierre manual? Estas fechas quedarán disponibles si no hay otro bloqueo.</p><div className="cobros-acciones"><button disabled={guardando} onClick={reabrir}>Abrir cierre</button><button onClick={() => setAbrir(false)}>Cancelar</button></div></div>}
     {error && <p role="alert" className="cobros-error">{error}</p>}
     {mensaje && <p role="status">{mensaje}</p>}
@@ -169,7 +183,7 @@ function FichaReserva() {
       <div className="cobros-acciones"><button className="cobros-primary" disabled={guardando || !recordar || recordar < hoyLocal()} onClick={() => actualizar({ recordar_el: recordar })}>Guardar fecha</button>{reserva.recordar_el && <button disabled={guardando} onClick={() => actualizar({ recordar_el: null })}>Reactivar pendientes</button>}</div>
     </section>}
     {tab === 'pagos' && !cerrada && <CobrosReserva key={id} reserva={reserva} onChange={recargar} mesInicial={params.get('mes') || ''} />}
-    {tab === 'mensaje' && !cerrada && <section className="ficha-mensaje"><h3>Detalle para el huésped</h3><textarea aria-label="Mensaje para WhatsApp" rows={10} value={texto} onChange={e => setBorrador(e.target.value)} /><div className="cobros-acciones"><button onClick={async () => { try { await navigator.clipboard.writeText(texto); setMensaje('Mensaje copiado.') } catch { setError('No se pudo copiar el mensaje.') } }}>Copiar mensaje</button><button onClick={() => setBorrador(null)}>Actualizar detalle</button>{reserva.clientes?.whatsapp && <a className="cobros-link" target="_blank" rel="noreferrer" href={`https://wa.me/${reserva.clientes.whatsapp.replace(/\D/g, '')}?text=${encodeURIComponent(texto)}`}>Abrir WhatsApp</a>}</div></section>}
+    {tab === 'mensaje' && !cerrada && <MensajesReserva key={`${id}-${tipoMensaje}`} reservaId={id} tipoInicial={tipoMensaje} onChange={recargar} />}
     {tab === 'historial' && <section><h3>Historial de cambios</h3>{historialError && <p role="alert">{historialError}</p>}{!historialError && !historial.length && <p>No hay cambios registrados todavía.</p>}<ul className="cobros-historial">{historial.map(h => <li key={h.id}><div><small>{new Date(h.registrado_at).toLocaleString('es-AR')} · {h.origen === 'ical' ? 'Sincronización iCal' : h.origen === 'automatico' ? 'Actualización automática' : 'App'}</small><p className="ficha-notas">{cambios(h)}</p></div></li>)}</ul>{historial.length === limite && <button onClick={() => setLimite(n => n + 30)}>Ver cambios anteriores</button>}</section>}
   </main>
 }

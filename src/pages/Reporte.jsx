@@ -144,6 +144,7 @@ export default function Reportes() {
 
   const totalIngresos  = reales.reduce((acc, r) => acc + ingresoEnPeriodo(r), 0)
   const sinMensualidades = reales.filter(r => ingresoEnPeriodo(r) === null)
+  const sinPrecioTemporal = reales.filter(r => r.modalidad !== 'mensual' && !(Number(r.precio_total) > 0))
   const ticketPromedio = ticketTemporal(reales, desde, hasta)
   const pendientes = reservas.filter(r => r.estado === 'señada' || r.estado === 'pendiente')
   const canceladas = reservas.filter(r => r.estado === 'cancelada')
@@ -224,6 +225,7 @@ export default function Reportes() {
       {error && <div role="alert" className="cobros cobros-error">{error} <button onClick={() => setRevision(v => v + 1)}>Reintentar</button></div>}
       {!error && !loading && <>
       {sinMensualidades.length > 0 && <div className="cobros-aviso" role="alert">Importes incompletos: {sinMensualidades.length} reserva(s) mensual(es) sin cuotas definidas para todo el período. No se incluyen en los ingresos ni se estiman por noche. Completá las mensualidades en Pagos.</div>}
+      {sinPrecioTemporal.length > 0 && <p className="cobros-aviso" role="status">{sinPrecioTemporal.length} reserva(s) temporal(es) sin precio. No se incluyen en el ticket promedio; los ingresos están incompletos.</p>}
       <div className="report-metrics" style={s.metricasGrid}>
         <Metrica label="Reservas" valor={reales.length} sub={`${canceladas.length} canceladas`} color="#2d5a3d" bg="#e8f0eb" />
         <Metrica label="Ocupación" valor={`${ocupacion}%`} sub={`${nochesOcupadas} de ${diasDisponibles} noches`} color="#1E40AF" bg="#DBEAFE" />

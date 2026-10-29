@@ -25,12 +25,16 @@ test('asignar inquilino prepara la misma reserva manual, protegida del sync', ()
   assert.equal(reserva.id,cierre.id)
   assert.equal(reserva.checkin,cierre.checkin)
   assert.equal(reserva.checkout,cierre.checkout)
-  assert.equal(reserva.estado,'confirmada')
+  assert.equal(reserva.estado,'pendiente')
   assert.equal(reserva.canal_origen,'directo')
   assert.ok(protegida(reserva,'booking'))
   assert.equal(cierre.estado,'cerrada')
 })
 test('el enlace de conversión no modifica una reserva que ya no está cerrada', () => {
   const reserva = { id:'r1',estado:'pendiente',canal_origen:'booking' }
+  assert.deepEqual(reservaDesdeCierre(reserva),reserva)
+})
+test('asignar otro cliente no degrada una reserva confirmada ni cambia su canal', () => {
+  const reserva = { id:'r1',estado:'confirmada',canal_origen:'booking',cliente_id:'c1' }
   assert.deepEqual(reservaDesdeCierre(reserva),reserva)
 })

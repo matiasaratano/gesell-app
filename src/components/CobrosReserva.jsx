@@ -176,8 +176,9 @@ export default function CobrosReserva({ reserva, onChange, mesInicial = '' }) {
       <div className="cobros-totales">
         <div><small>Total estadía</small><strong>{resumen.total === null ? 'A revisar' : dinero(resumen.total)}</strong></div>
         <div><small>Recibido</small><strong>{dinero(resumen.recibido)}</strong></div>
-        <div><small>Saldo de la estadía</small><strong>{resumen.saldo === null ? 'Sin calcular' : dinero(resumen.saldo)}</strong></div>
+        <div><small>{estado === 'cancelada' ? 'Saldo registrado' : 'Saldo de la estadía'}</small><strong>{resumen.saldo === null ? 'Sin calcular' : dinero(resumen.saldo)}</strong></div>
       </div>
+      {estado === 'cancelada' && <p>Importes históricos. La cancelación no calcula devoluciones ni retenciones.</p>}
       {resumen.total === null && <p className="cobros-aviso">Falta el precio total de la reserva.</p>}
       {resumen.excedente > 0 && <p className="cobros-aviso">Cobrado de más: {dinero(resumen.excedente)}</p>}
       {registrando && !['cerrada', 'cancelada'].includes(estado) && <form ref={formularioRef} className="cobros-registro" onSubmit={guardar}>

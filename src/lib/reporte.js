@@ -1,6 +1,6 @@
 const day = value => Date.parse(`${value}T00:00:00Z`) / 86400000
 export function ticketTemporal(reservas, desde, hasta) {
-  const temporales = reservas.filter(r => r.modalidad !== 'mensual' && !['cerrada', 'cancelada'].includes(r.estado) && r.checkin <= hasta && r.checkout > desde)
+  const temporales = reservas.filter(r => r.modalidad !== 'mensual' && Number.isFinite(Number(r.precio_total)) && Number(r.precio_total) > 0 && !['cerrada', 'cancelada'].includes(r.estado) && r.checkin <= hasta && r.checkout > desde)
   return temporales.length ? Math.round(temporales.reduce((total, r) => total + valorEnPeriodo(r, desde, hasta), 0) / temporales.length) : null
 }
 export function valorEnPeriodo(reserva, desde, hasta) {

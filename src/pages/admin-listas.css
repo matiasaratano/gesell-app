@@ -28,6 +28,7 @@
   .admin-tabla-clientes .admin-identidad small { display: inline; margin: 0 0 0 8px; }
 }
 .admin-importe { font-variant-numeric: tabular-nums; }
+.admin-paginacion { display: flex; gap: 12px; align-items: center; justify-content: flex-end; flex-wrap: wrap; margin-top: 16px; font-size: 13px; }
 .admin-tabla-cobros th:first-child { width: 23%; }
 .admin-fecha { display: block; }
 .admin-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
